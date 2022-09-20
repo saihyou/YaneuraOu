@@ -267,15 +267,7 @@ void MovePicker::score()
 																											    0);
 				// → Stockfishのコードそのままは書けない。
 #endif
-
-#if 0
-					+     (threatened & from_sq(m) ?
-							 ((moved_piece == ROOK || moved_piece == BISHOP) && !threatenedByPawn.test(to_sq(m)) ? 50000
-						:                                                       !threatenedByPawn.test(to_sq(m)) ? 15000
-						:                                                                                          0)
-						:                                                                                          0);
-#endif
-				// →　強くならなかったのでコメントアウト。
+					+ bool(pos.check_squares(type_of(movedPiece)) & movedSq) * 16384
 					;
 
 		}
