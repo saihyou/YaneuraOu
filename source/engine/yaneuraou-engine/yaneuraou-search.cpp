@@ -1833,9 +1833,7 @@ namespace {
 		// eval が alpha よりもずっと下にある場合、qsearch が alpha よりも上に押し上げることが
 		// できるかどうかをチェックし、もしできなければ fail low を返す。
 
-		if (  !PvNode
-			&& depth <= 7
-			&& eval < alpha - 369 - 254 * depth * depth)
+		if (eval < alpha - 369 - 254 * depth * depth)
 		{
 			value = qsearch<NonPV>(pos, ss, alpha - 1, alpha);
 			if (value < alpha)
@@ -2243,8 +2241,7 @@ namespace {
 #endif
 
 					// Futility pruning for captures (~0 Elo)
-					if (   !pos.empty(to_sq(move))
-						&& !givesCheck
+					if (   !givesCheck
 						&& !PvNode
 						&& lmrDepth < 7
 						&& !ss->inCheck
@@ -2541,6 +2538,13 @@ namespace {
 				// Decrease reduction if ttMove has been singularly extended (~1 Elo)
 				if (singularQuietLMR)
 					r--;
+
+#if 0	
+				// Dicrease reduction if we move a threatened piece (~1 Elo)
+          		if (   depth > 9
+              		&& (mp.threatenedPieces & from_sq(move)))
+              		r--;
+#endif
 
 				// Increase reduction if next ply has a lot of fail high else reset count to 0
 				if ((ss + 1)->cutoffCnt > 3 && !PvNode)
@@ -3270,8 +3274,8 @@ namespace {
 			// ※ Stockfish12でqsearch()にも導入された。
 			if (  !capture
 				&& bestValue > VALUE_TB_LOSS_IN_MAX_PLY
-				&& (*contHist[0])[to_sq(move)][pos.moved_piece_after(move)] < CounterMovePruneThreshold
-				&& (*contHist[1])[to_sq(move)][pos.moved_piece_after(move)] < CounterMovePruneThreshold)
+				&& (*contHist[0])[to_sq(move)][pos.moved_piece_after(move)] < 0
+				&& (*contHist[1])[to_sq(move)][pos.moved_piece_after(move)] < 0)
 				continue;
 
 			// movecount pruning for quiet check evasions
