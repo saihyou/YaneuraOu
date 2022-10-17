@@ -126,6 +126,10 @@ MovePicker::MovePicker(const Position& p, Move ttm, Depth d, const ButterflyHist
 	stage = (pos.in_check() ? EVASION_TT : MAIN_TT) +
 		!(ttm && pos.pseudo_legal(ttm));
 
+#if 0
+	threatenedPieces = 0;
+#endif
+
 	// 置換表の指し手があるならそれを最初に試す。ただしpseudo_legalでなければならない。
 	// 置換表の指し手がないなら、次のstageから開始する。
 }
@@ -179,7 +183,7 @@ void MovePicker::score()
 	// threatenedByMinor : 敵の歩・小駒による利き
 	// threatenedByRook  : 敵の大駒による利き(やねうら王では使わず)
 
-	// Bitboard threatened, threatenedByPawn , threatenedByMinor , threatenedByRook */;
+	// Bitboard threatenedByPawn , threatenedByMinor , threatenedByRook */;
 
 	if constexpr (Type == QUIETS)
 	{
@@ -193,7 +197,7 @@ void MovePicker::score()
 		threatenedByRook  = pos.attacks_by<ROOK>(~us) | threatenedByMinor;
 
 		// pieces threatened by pieces of lesser material value
-		threatened =  (pos.pieces(us, QUEEN) & threatenedByRook)
+		threatenedPieces =  (pos.pieces(us, QUEEN) & threatenedByRook)
 					| (pos.pieces(us, ROOK)  & threatenedByMinor)
 					| (pos.pieces(us, KNIGHT, BISHOP) & threatenedByPawn);
 #endif
@@ -209,7 +213,7 @@ void MovePicker::score()
 		threatenedByPawn = (~us == BLACK) ? pos.attacks_by<BLACK, PAWN>() : pos.attacks_by<WHITE, PAWN>();
 
 		// 歩以外の自駒で、相手の歩の利きにある駒
-		threatened =  (pos.pieces(us,PAWN).andnot(pos.pieces(us))                 & threatenedByPawn );
+		threatenedPieces =  (pos.pieces(us,PAWN).andnot(pos.pieces(us))                 & threatenedByPawn );
 #endif
 		// →　やってみたが強くならないのでコメントアウトする。[2022/04/26]
 	}
@@ -259,7 +263,7 @@ void MovePicker::score()
 					+     (*continuationHistory[5])[movedSq][movedPiece]
 				//	移動元の駒が安い駒で当たりになっている場合、移動させることでそれを回避できるなら価値を上げておく。
 #if 0
-					+     (threatened & from_sq(m) ?
+					+     (threatenedPieces & from_sq(m) ?
 							 (type_of(pos.moved_piece_before(m)) == QUEEN && !(to_sq(m) & threatenedByRook ) ? 50000
 							: type_of(pos.moved_piece_before(m)) == ROOK  && !(to_sq(m) & threatenedByMinor) ? 25000
 							:                                                !(to_sq(m) & threatenedByPawn ) ? 15000
@@ -298,12 +302,12 @@ void MovePicker::score()
 			if (pos.capture(m))
 				// 捕獲する指し手に関しては簡易SEE + MVV/LVA
 				m.value = (Value)Eval::CapturePieceValue[pos.piece_on(to_sq(m))]
-				        - (Value)(LVA(type_of(pos.moved_piece_before(m))));
+				        - (Value)(LVA(type_of(pos.moved_piece_before(m))))
+						+ (1 << 28);
 			else
 				// 捕獲しない指し手に関してはhistoryの値の順番
 				m.value = 2 * (*mainHistory)[from_to(m)][pos.side_to_move()]
-						+ 2 * (*continuationHistory[0])[to_sq(m)][pos.moved_piece_after(m)]
-						- (1 << 28);
+						+ 2 * (*continuationHistory[0])[to_sq(m)][pos.moved_piece_after(m)];
 
 		}
 	}

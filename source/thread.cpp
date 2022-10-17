@@ -51,7 +51,6 @@ void Thread::clear()
 
 	for (bool inCheck : { false, true })
 		for (StatsType c : { NoCaptures, Captures })
-		{
 			// ほとんどの履歴エントリがいずれにせよ後で負になるため、
 			// 開始値を「正しい」方向に少しシフトさせるため、-71で埋めている。
 			// この効果は、深度が深くなるほど薄れるので、長時間思考させる時には
@@ -61,9 +60,6 @@ void Thread::clear()
 			for (auto& to : continuationHistory[inCheck][c])
 				for (auto& h : to)
 					h->fill(-71);
-
-			continuationHistory[inCheck][c][SQ_ZERO][NO_PIECE]->fill(Search::CounterMovePruneThreshold - 1);
-		}
 #endif
 }
 

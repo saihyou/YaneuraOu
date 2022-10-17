@@ -174,6 +174,10 @@ public:
 	// 置換表の指し手(ttMove)を返したあとは、それを取り除いた指し手を返す。
 	Move next_move(bool skipQuiets = false);
 
+#if 0
+	Bitboard threatenedPieces;
+#endif
+
 private:
 	template <PickType T, typename Pred> Move select(Pred);
 
