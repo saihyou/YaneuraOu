@@ -499,7 +499,7 @@ void MainThread::search()
 		rootMoves[0].score = mated_in(0);
 
 		if (!Limits.silent)
-			sync_cout << USI::pv(rootPos, 1 , -VALUE_INFINITE, VALUE_INFINITE) << sync_endl;
+			sync_cout << USI::pv(rootPos, 1) << sync_endl;
 
 		goto SKIP_SEARCH;
 	}
@@ -545,7 +545,7 @@ void MainThread::search()
 
 				// rootで宣言勝ちのときにもそのPVを出力したほうが良い。
 				if (!Limits.silent)
-					sync_cout << USI::pv(rootPos, 1 , -VALUE_INFINITE, VALUE_INFINITE) << sync_endl;
+					sync_cout << USI::pv(rootPos, 1) << sync_endl;
 
 				goto SKIP_SEARCH;
 			}
@@ -638,7 +638,7 @@ SKIP_SEARCH:;
 			// →　いずれにせよ、mateを見つけた時に最終的なPVを出力していないと、詰みではないscoreのPVが最終的な読み筋としてGUI上に
 			//     残ることになるからよろしくない。PV自体は必ず出力すべきなのでは。
 			if (/*bestThread != this &&*/ !Limits.silent && !Limits.consideration_mode)
-				sync_cout << USI::pv(bestThread->rootPos, bestThread->completedDepth, -VALUE_INFINITE, VALUE_INFINITE) << sync_endl;
+				sync_cout << USI::pv(bestThread->rootPos, bestThread->completedDepth) << sync_endl;
 
 			output_final_pv_done = true;
 		}
@@ -857,7 +857,6 @@ void Thread::search()
 	//complexityAverage.set(155, 1);
 	// →導入せず
 
-	//trend = SCORE_ZERO;
 	//optimism[ us] = Value(37);
 	//optimism[~us] = -optimism[us];
 
@@ -974,17 +973,6 @@ void Thread::search()
 				beta  = std::min(prev + delta,  VALUE_INFINITE);
 
 #if 0
-				// Adjust trend and optimism based on root move's previousScore
-				// trendと楽観の値をrootの指し手のpreviousScoreを基に調整する。(動的なcontempt)
-
-				// ※　trendは千日手を受け入れるスコア。
-				//     勝ってるほうは千日手にはしたくないし、負けてるほうは千日手やむなしという…。
-
-				int tr = 116 * prev / (std::abs(prev) + 89);
-
-				trend = (us == WHITE ?  make_score(tr, tr / 2)
-					                 : -make_score(tr, tr / 2));
-
 				int opt = 118 * prev / (std::abs(prev) + 169);
 				optimism[us] = Value(opt);
 				optimism[~us] = -optimism[us];
@@ -1038,7 +1026,7 @@ void Thread::search()
 				{
 					// 最後に出力した時刻を記録しておく。
 					mainThread->lastPvInfoTime = Time.elapsed();
-					sync_cout << USI::pv(rootPos, rootDepth, alpha, beta) << sync_endl;
+					sync_cout << USI::pv(rootPos, rootDepth) << sync_endl;
 				}
 
 				// aspiration窓の範囲外
@@ -1106,7 +1094,7 @@ void Thread::search()
 						&& (rootDepth < 3 || mainThread->lastPvInfoTime + Limits.pv_interval <= Time.elapsed())))
 				{
 					mainThread->lastPvInfoTime = Time.elapsed();
-					sync_cout << USI::pv(rootPos, rootDepth, alpha, beta) << sync_endl;
+					sync_cout << USI::pv(rootPos, rootDepth) << sync_endl;
 				}
 			}
 
@@ -1987,7 +1975,7 @@ namespace {
 		{
 			ASSERT_LV3(probCutBeta < VALUE_INFINITE);
 
-			MovePicker mp(pos, ttMove, probCutBeta - ss->staticEval, depth - 3, &captureHistory);
+			MovePicker mp(pos, ttMove, probCutBeta - ss->staticEval, &captureHistory);
 
 			// 試行回数は2回(cutNodeなら4回)までとする。(よさげな指し手を3つ試して駄目なら駄目という扱い)
 			// cf. Do move-count pruning in probcut : https://github.com/official-stockfish/Stockfish/commit/b87308692a434d6725da72bbbb38a38d3cac1d5f
@@ -2540,14 +2528,14 @@ namespace {
 					r--;
 
 #if 0	
-				// Dicrease reduction if we move a threatened piece (~1 Elo)
+				// Decrease reduction if we move a threatened piece (~1 Elo)
           		if (   depth > 9
               		&& (mp.threatenedPieces & from_sq(move)))
               		r--;
 #endif
 
 				// Increase reduction if next ply has a lot of fail high else reset count to 0
-				if ((ss + 1)->cutoffCnt > 3 && !PvNode)
+				if ((ss + 1)->cutoffCnt > 3)
 					r++;
 
 				// 【計測資料 11.】statScoreの計算でcontHist[3]も調べるかどうか。
@@ -2560,7 +2548,7 @@ namespace {
 
 
 				// Decrease/increase reduction for moves with a good/bad history (~30 Elo)
-				r -= ss->statScore / 13628;
+				r -= ss->statScore / (13628 + 4000 * (depth > 7 && depth < 19));
 
 				// depth >= 3なのでqsearchは呼ばれないし、かつ、
 				// moveCount > 1 すなわち、このnodeの2手目以降なのでsearch<NonPv>が呼び出されるべき。
@@ -2580,7 +2568,11 @@ namespace {
 				if (value > alpha && d < newDepth)
 				{
 					const bool doDeeperSearch = value > (alpha + 64 + 11 * (newDepth - d));
-					value = -search<NonPV>(pos, ss + 1, -(alpha + 1), -alpha, newDepth + doDeeperSearch, !cutNode);
+					const bool doShallowerSearch = value < bestValue + newDepth;
+					newDepth += doDeeperSearch - doShallowerSearch;
+
+              		if (newDepth > d)
+                  		value = -search<NonPV>(pos, ss+1, -(alpha+1), -alpha, newDepth, !cutNode);
 
 					int bonus = value > alpha ?  stat_bonus(newDepth)
 											  : -stat_bonus(newDepth);
@@ -2661,6 +2653,8 @@ namespace {
 
 					rm.score = value;
 					rm.selDepth = thisThread->selDepth;
+					rm.scoreLowerbound = value >= beta;
+              		rm.scoreUpperbound = value <= alpha;
 					rm.pv.resize(1);
 					// PVは変化するはずなのでいったんリセット
 
@@ -2747,8 +2741,6 @@ namespace {
 					}
 				}
 			}
-			else
-				ss->cutoffCnt = 0;
 
 			// If the move is worse than some previously searched move, remember it to update its stats later
 			// もしその指し手が、以前に探索されたいくつかの指し手より悪い場合は、あとで統計を取る時のために記憶しておく。
@@ -3287,10 +3279,8 @@ namespace {
 			// 考えるのは理に適っている。
 
 			if (  bestValue > VALUE_TB_LOSS_IN_MAX_PLY
-				&& quietCheckEvasions > 1
-				&& !capture
-				&& ss->inCheck)
-				continue;
+				&& quietCheckEvasions > 1)
+				break;
 
 			quietCheckEvasions += !capture && ss->inCheck;
 
