@@ -3535,6 +3535,102 @@ namespace Learner {
 #endif
 
 	}
+	struct MultiThinkFilterSfen : public MultiThink {
+		MultiThinkFilterSfen(SfenReader& reader, SfenWriter& writer)
+		: sfen_reader_(reader), sfen_writer_(writer) {}
+		
+		void init() {}
+		virtual void thread_worker(size_t thread_id);
+		void start_file_write_worker() { sfen_writer_.start_file_write_worker(); }
+		void start_file_read_worker() { sfen_reader_.start_file_read_worker(); }
+		
+		SfenReader& sfen_reader_;
+		SfenWriter& sfen_writer_;
+	};
+	
+
+	void MultiThinkFilterSfen::thread_worker(size_t thread_id) {
+		std::vector<StateInfo> states(MAX_PLY /* == search_depth + α */);
+		StateInfo* const states_pointer = &states[0];
+		// Positionに対して従属スレッドの設定が必要。
+		// 並列化するときは、Threads (これが実体が vector<Thread*>なので、
+		// Threads[0]...Threads[thread_num-1]までに対して同じようにすれば良い。
+		auto& th = *Threads[thread_id];
+
+		auto& pos = th.rootPos;
+		bool quit = false;
+		while (!quit) {
+			PackedSfenValue ps;
+			if (!sfen_reader_.read_to_thread_buffer(thread_id, ps)) {
+				quit = true;
+				break;
+			}
+			if (!pos.set_from_packed_sfen(ps.sfen, states_pointer, &th).is_ok()) {
+				cout << "Error! : illegal packed sfen = " << pos.sfen() << endl;
+				break;
+			}
+			auto move = pos.to_move(ps.move);
+			if (pos.in_check() || pos.capture(move)) {
+				continue;
+			}
+			auto pv_value = search(pos, 6, 2);
+			auto best_move = th.rootMoves[0].pv[0];
+			bool more_than_one_valid_move = th.rootMoves.size() > 1;
+			if (pos.capture(best_move)) {
+				continue;
+			} else if (more_than_one_valid_move && pos.capture(th.rootMoves[1].pv[0])) {
+				continue;
+			} else if (more_than_one_valid_move) {
+				// remove positions with only 1 good move
+				Value m1_score = th.rootMoves[0].score;
+				Value m2_score = th.rootMoves[1].score;
+				if (abs(m1_score) < 110 && abs(m2_score) > 200) {
+					continue;
+				} else if (abs(m1_score) > 200 && abs(m2_score) < 110) {
+					continue;
+				} else if (abs(m1_score) > 200 &&
+					(abs(m2_score) > 200 && ((m1_score > 0) != (m2_score > 0)))) {
+					continue;
+				}
+			}
+			sfen_writer_.write(thread_id, ps);
+		}
+		sfen_writer_.finalize(thread_id);
+	}
+
+	void filter_sfen(Position& pos, istringstream& is) {
+		u32 thread_num = (u32)Options["Threads"];
+		string input_file_name = "input.bin";
+		string output_file_name = "filter.bin";
+		while (true) {
+			string token = "";
+			is >> token;
+			if (token == "") {
+				break;
+			}
+			if (token == "input_file_name") {
+				is >> input_file_name;
+			} else if (token == "output_file_name") {
+				is >> output_file_name;
+			}
+		}
+		std::cout << "filter_sfen : " << endl
+			<< "  input_file_name = " << input_file_name << endl
+			<< "  output_file_name = " << output_file_name << endl;
+		
+		{
+			SfenWriter sw(output_file_name, thread_num);
+			SfenReader sr(thread_num);
+			sr.filenames.push_back(input_file_name);
+			sr.no_shuffle = true;
+
+			MultiThinkFilterSfen multi_think(sr, sw);
+			multi_think.start_file_read_worker();
+			multi_think.start_file_write_worker();
+			multi_think.go_think();
+		}
+		std::cout << "filter_sfen finished." << endl;
+	}
 }
 
 #endif // defined(EVAL_LEARN) && defined(GENSFEN2019)
