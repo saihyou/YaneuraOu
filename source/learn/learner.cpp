@@ -3594,7 +3594,6 @@ namespace Learner {
 				}
 			}
 			if (abs(th.rootMoves[0].score) > VALUE_MAX_EVAL && abs(ps.score) < VALUE_MAX_EVAL) {
-				cout << th.rootMoves[0].score << " " << ps.score << endl;
 				ps.score = th.rootMoves[0].score;
 			}
 			sfen_writer_.write(thread_id, ps);
