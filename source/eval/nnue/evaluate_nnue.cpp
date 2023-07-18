@@ -138,8 +138,12 @@ namespace Eval {
             alignas(kCacheLineSize) TransformedFeatureType
                 transformed_features[FeatureTransformer::kBufferSize];
             feature_transformer->Transform(pos, transformed_features, refresh);
+#if 0
             alignas(kCacheLineSize) char buffer[Network::kBufferSize];
             const auto output = network->Propagate(transformed_features, buffer);
+#else
+            const auto output = network->Propagate(transformed_features);
+#endif
 
             // VALUE_MAX_EVALより大きな値が返ってくるとaspiration searchがfail highして
             // 探索が終わらなくなるのでVALUE_MAX_EVAL以下であることを保証すべき。
@@ -152,9 +156,11 @@ namespace Eval {
 
             // しかし、教師生成時などdepth固定で探索するときに探索から戻ってこなくなるので
             // そのスレッドの計算時間を無駄にする。またdepth固定対局でtime-outするようになる。
-
+#if 0
             auto score = static_cast<Value>(output[0] / FV_SCALE);
-
+#else
+            auto score = static_cast<Value>(output / FV_SCALE);
+#endif
             // 1) ここ、下手にclipすると学習時には影響があるような気もするが…。
             // 2) accumulator.scoreは、差分計算の時に用いないので書き換えて問題ない。
             score = Math::clamp(score, -VALUE_MAX_EVAL, VALUE_MAX_EVAL);

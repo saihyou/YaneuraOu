@@ -453,6 +453,7 @@ ifneq (,$(findstring YANEURAOU_ENGINE_NNUE,$(YANEURAOU_EDITION)))
 		eval/nnue/features/k.cpp                                        \
 		eval/nnue/features/p.cpp                                        \
 		eval/nnue/features/half_kp.cpp                                  \
+		eval/nnue/features/half_ka.cpp									\
 		eval/nnue/features/half_kp_vm.cpp                               \
 		eval/nnue/features/half_relative_kp.cpp                         \
 		eval/nnue/features/half_kpe9.cpp                                \

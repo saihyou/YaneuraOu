@@ -40,7 +40,7 @@
 #else
 
 // どれも定義されていなかったので標準NNUE型にしておく。
-#include "architectures/halfkp_256x2-32-32.h"
+#include "architectures/halfka_512x2-15-32.h"
 
 #endif
 
