@@ -34,7 +34,7 @@ struct Network
   Stockfish::Eval::NNUE::Layers::AffineTransform<kTransformedFeatureDimensions * 2, FC_0_OUTPUTS> fc_0;
   Stockfish::Eval::NNUE::Layers::ClippedReLU<FC_0_OUTPUTS> ac_0;
   Stockfish::Eval::NNUE::Layers::SqrClippedReLU<FC_0_OUTPUTS> ac_sqr_0;
-  Stockfish::Eval::NNUE::Layers::AffineTransform<FC_0_OUTPUTS, FC_1_OUTPUTS> fc_1;
+  Stockfish::Eval::NNUE::Layers::AffineTransform<FC_0_OUTPUTS * 2, FC_1_OUTPUTS> fc_1;
   Stockfish::Eval::NNUE::Layers::ClippedReLU<FC_1_OUTPUTS> ac_1;
   Stockfish::Eval::NNUE::Layers::AffineTransform<FC_1_OUTPUTS, 1> fc_2;
 
