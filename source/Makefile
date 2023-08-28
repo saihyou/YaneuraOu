@@ -292,6 +292,11 @@ ifneq (,$(findstring YANEURAOU_ENGINE_NNUE,$(YANEURAOU_EDITION)))
 		BLAS_LDFLAGS += -L$(shell cygpath -aw /usr/local/lib)
 	endif
 endif
+ifeq ($(YANEURAOU_EDITION),YANEURAOU_ENGINE_NNUE_HALFKA_512X2_8X2_32)
+	BLAS_CPPFLAGS=
+	BLAS_LDFLAGS=
+endif
+
 
 CPPFLAGS += -DNO_EXCEPTIONS
 LDFLAGS += -lpthread
