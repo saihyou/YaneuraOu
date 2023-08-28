@@ -3540,6 +3540,163 @@ namespace Learner {
 #endif
 
 	}
+
+	struct MultiThinkFilterSfen : public MultiThink {
+        MultiThinkFilterSfen(SfenReader& reader, SfenWriter& writer, bool smart_fen_skipping,
+			bool qsearch_sfen_skipping, bool depth6_filter, bool mirror_move)
+            : sfen_reader_(reader), sfen_writer_(writer), smart_sfen_skipping_(smart_fen_skipping),
+			  qsearch_sfen_skipping_(qsearch_sfen_skipping), depth6_filter_(depth6_filter),
+			  mirror_move_(mirror_move)  {}
+
+        void init() {}
+        virtual void thread_worker(size_t thread_id);
+        void start_file_write_worker() { sfen_writer_.start_file_write_worker(); }
+        void start_file_read_worker() { sfen_reader_.start_file_read_worker(); }
+
+        SfenReader& sfen_reader_;
+        SfenWriter& sfen_writer_;
+		bool smart_sfen_skipping_;
+		bool qsearch_sfen_skipping_;
+		bool depth6_filter_;
+		bool mirror_move_;
+    };
+
+	void MultiThinkFilterSfen::thread_worker(size_t thread_id) {
+		std::vector<StateInfo> states(MAX_PLY /* == search_depth + α */);
+		StateInfo* const states_pointer = &states[0];
+		// Positionに対して従属スレッドの設定が必要。
+		// 並列化するときは、Threads (これが実体が vector<Thread*>なので、
+		// Threads[0]...Threads[thread_num-1]までに対して同じようにすれば良い。
+		auto& th = *Threads[thread_id];
+
+		auto& pos = th.rootPos;
+		bool quit = false;
+		while (!quit) {
+			PackedSfenValue ps;
+			if (!sfen_reader_.read_to_thread_buffer(thread_id, ps)) {
+				quit = true;
+				break;
+			}
+			if (!pos.set_from_packed_sfen(ps.sfen, states_pointer, &th).is_ok()) {
+				cout << "Error! : illegal packed sfen = " << pos.sfen() << endl;
+				break;
+			}
+			if (smart_sfen_skipping_) {
+				auto move = pos.to_move(ps.move);
+				if (pos.in_check() || pos.capture(move)) {
+					continue;
+				}
+			}
+			if (qsearch_sfen_skipping_) {
+				auto pv_value = qsearch(pos);
+                if (!pv_value.second.empty()) {
+					continue;
+				}
+			}
+			if (depth6_filter_) {
+				auto pv_value = search(pos, 6, 2);
+				if (th.rootMoves.size() <= 1) {
+					continue;
+				}
+				auto best_move = th.rootMoves[0].pv[0];
+				if (pos.capture(best_move)) {
+					continue;
+				}
+				Value bestmove1_score = th.rootMoves[0].score;
+				Value bestmove2_score = th.rootMoves[1].score;
+				if (abs(bestmove1_score) < 100 && abs(bestmove2_score) > 150) {
+					// best move about equal, 2nd best move loses
+					continue;
+				} else if (abs(bestmove1_score) > 150 && abs(bestmove2_score) < 100) {
+					// best move gains advantage, 2nd best move equalizes
+					continue;
+				} else if ((bestmove1_score > 0) != (bestmove2_score > 0)) {
+					// if the 2 best move scores favor different sides
+					if (abs(bestmove1_score) > 150 && abs(bestmove2_score) > 150) {
+						// best move gains an advantage, 2nd best move loses
+						continue;
+					} else if (abs(bestmove1_score - bestmove2_score) > 200) {
+						// score diff threshold if the best moves favor different sides
+						continue;
+					}
+				}
+			}
+			sfen_writer_.write(thread_id, ps);
+			if (mirror_move_) {
+                Position mirror_pos;
+				StateInfo si;
+                if (mirror_pos.set_from_packed_sfen(ps.sfen, &si, &th, true).is_ok()) {
+                	PackedSfenValue mirror = ps;
+                    mirror_pos.sfen_pack(mirror.sfen);
+                    u16 mirror_move16 = 0;
+                    Square mirror_to = Mir(to_sq(ps.move));
+                    Square mirror_from = from_sq(ps.move);
+                    if (is_drop(ps.move)) {
+                    	mirror_move16 = ps.move & 0xFF00 | static_cast<u16>(mirror_to);
+                    } else {
+                        mirror_from = Mir(mirror_from);
+                        mirror_move16 = (mirror_from << 7) | static_cast<u16>(mirror_to);
+                        if (is_promote(ps.move)) {
+                        	mirror_move16 |= MOVE_PROMOTE;
+                        }
+                    }
+                    mirror.move = mirror_move16;
+                    sfen_writer_.write(thread_id, mirror);
+                }
+			}
+		}
+		sfen_writer_.finalize(thread_id);
+	}
+
+	void filter_sfen(Position& pos, istringstream& is) {
+        u32 thread_num = (u32)Options["Threads"];
+        string input_file_name = "input.bin";
+    	string output_file_name = "filter.bin";
+		bool smart_sfen_skipping = false;
+		bool qsearch_sfen_skipping = false;
+		bool depth6_filter = false;
+		bool mirror_move = false;
+        while (true) {
+            string token = "";
+            is >> token;
+            if (token == "") {
+                break;
+            }
+            if (token == "input_file_name") {
+                is >> input_file_name;
+            } else if (token == "output_file_name") {
+                is >> output_file_name;
+            } else if (token == "smart_sfen_skipping") {
+				smart_sfen_skipping = true;
+			} else if (token == "qsearch_sfen_skipping") {
+				qsearch_sfen_skipping = true;
+			} else if (token == "depth6_filter") {
+				depth6_filter = true;
+			} else if (token == "mirror_move") {
+				mirror_move = true;
+			}
+        }
+        std::cout << "filter_sfen : " << endl
+                  << "  input_file_name = " << input_file_name << endl
+                  << "  output_file_name = " << output_file_name << endl
+				  << "  smart_sfen_skipping = " << smart_sfen_skipping << endl
+				  << "  qsearch_sfen_skipping = " << qsearch_sfen_skipping << endl
+				  << "  depth6_filter = " << depth6_filter << endl
+				  << "  mirror_move = "  << mirror_move << endl;
+
+        {
+            SfenWriter sw(output_file_name, thread_num);
+            SfenReader sr(thread_num);
+            sr.filenames.push_back(input_file_name);
+            sr.no_shuffle = true;
+
+            MultiThinkFilterSfen multi_think(sr, sw, smart_sfen_skipping, qsearch_sfen_skipping, depth6_filter, mirror_move);
+            multi_think.start_file_read_worker();
+            multi_think.start_file_write_worker();
+            multi_think.go_think();
+        }
+        std::cout << "filter_sfen finished." << endl;
+    }
 }
 
 #endif // defined(EVAL_LEARN) && defined(GENSFEN2019)

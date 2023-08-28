@@ -106,6 +106,7 @@ namespace Learner
 #if defined(GENSFEN2019)
   // 開発中の教師局面の自動生成コマンド
   void gen_sfen2019(Position& pos, istringstream& is);
+  void filter_sfen(Position& pos, istringstream& is);
 #endif
 
   // 読み筋と評価値のペア。Learner::search(),Learner::qsearch()が返す。
@@ -1050,6 +1051,7 @@ void usi_cmdexec(Position& pos, StateListPtr& states, string& cmd)
 #if defined (GENSFEN2019)
 		// 開発中の教師局面生成コマンド
 		else if (token == "gensfen2019") Learner::gen_sfen2019(pos, is);
+		else if (token == "filter") Learner::filter_sfen(pos, is);
 #endif
 
 #endif
