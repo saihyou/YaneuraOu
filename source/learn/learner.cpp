@@ -68,7 +68,7 @@
 #include "../mate/mate.h"
 #include "multi_think.h"
 
-#if defined(EVAL_NNUE)
+#if defined(EVAL_NNUE) && !defined(USE_STOCKFISH_NNUE)
 #include "../eval/nnue/evaluate_nnue_learner.h"
 #include <shared_mutex>
 #endif
@@ -1505,7 +1505,7 @@ struct LearnerThink: public MultiThink
 		learn_sum_entropy_win = 0.0;
 		learn_sum_entropy = 0.0;
 #endif
-#if defined(EVAL_NNUE)
+#if defined(EVAL_NNUE) && !defined(USE_STOCKFISH_NNUE)
 		newbob_scale = 1.0;
 		newbob_decay = 1.0;
 		newbob_num_trials = 2;
@@ -1562,7 +1562,7 @@ struct LearnerThink: public MultiThink
 	atomic<double> learn_sum_entropy;
 #endif
 
-#if defined(EVAL_NNUE)
+#if defined(EVAL_NNUE) && !defined(USE_STOCKFISH_NNUE)
 	shared_timed_mutex nn_mutex;
 	double newbob_scale;
 	double newbob_decay;
@@ -1587,7 +1587,7 @@ struct LearnerThink: public MultiThink
 
 void LearnerThink::calc_loss(size_t thread_id, u64 done)
 {
-
+#if !defined(USE_STOCKFISH_NNUE)
 #if defined(EVAL_NNUE)
 	std::cout << "PROGRESS: " << Tools::now_string() << ", ";
 	std::cout << sr.total_done << " sfens";
@@ -1826,11 +1826,13 @@ void LearnerThink::calc_loss(size_t thread_id, u64 done)
 #else
 	<< endl;
 #endif
+#endif // #if !defined(USE_STOCKFISH_NNUE)
 }
 
 
 void LearnerThink::thread_worker(size_t thread_id)
 {
+#if !defined(USE_STOCKFISH_NNUE)
 #if defined(_OPENMP)
 	omp_set_num_threads((int)Options["Threads"]);
 #endif
@@ -2140,12 +2142,14 @@ void LearnerThink::thread_worker(size_t thread_id)
 #endif
 
 	}
+#endif
 }
 
 
 // 評価関数ファイルの書き出し。
 bool LearnerThink::save(bool is_final)
 {
+#if !defined(USE_STOCKFISH_NNUE)
 	// 保存前にcheck sumを計算して出力しておく。(次に読み込んだときに合致するか調べるため)
 	std::cout << "Check Sum = " << std::hex << Eval::calc_check_sum() << std::dec << std::endl;
 
@@ -2201,6 +2205,7 @@ bool LearnerThink::save(bool is_final)
 		}
 #endif
 	}
+#endif
 	return false;
 }
 
@@ -2842,7 +2847,7 @@ void learn(Position&, istringstream& is)
 
 	// 評価関数パラメーターの勾配配列の初期化
 	Eval::init_grad(eta1,eta1_epoch,eta2,eta2_epoch,eta3);
-#else
+#elif !defined(USE_STOCKFISH_NNUE)
 	cout << "init_training.." << endl;
 	Eval::NNUE::InitializeTraining(eta1,eta1_epoch,eta2,eta2_epoch,eta3);
 	Eval::NNUE::SetBatchSize(nn_batch_size);
@@ -2873,7 +2878,7 @@ void learn(Position&, istringstream& is)
 	learn_think.sr.no_shuffle = no_shuffle;
 	learn_think.freeze = freeze;
 	learn_think.reduction_gameply = reduction_gameply;
-#if defined(EVAL_NNUE)
+#if defined(EVAL_NNUE) && !defined(USE_STOCKFISH_NNUE)
 	learn_think.newbob_scale = 1.0;
 	learn_think.newbob_decay = newbob_decay;
 	learn_think.newbob_num_trials = newbob_num_trials;
@@ -2899,7 +2904,7 @@ void learn(Position&, istringstream& is)
 
 	// この時点で一度rmseを計算(0 sfenのタイミング)
 	// sr.calc_rmse();
-#if defined(EVAL_NNUE)
+#if defined(EVAL_NNUE) && !defined(USE_STOCKFISH_NNUE)
 	if (newbob_decay != 1.0) {
 		learn_think.calc_loss(0, -1);
 		learn_think.best_loss = learn_think.latest_loss_sum / learn_think.latest_loss_count;
