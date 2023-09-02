@@ -149,7 +149,7 @@ MovePicker::MovePicker(const Position& p, Move ttm, Depth d, const ButterflyHist
 		!(ttm
 			&& (pos.in_check() || depth > DEPTH_QS_RECAPTURES || to_sq(ttm) == recaptureSquare)
 			&& pos.pseudo_legal(ttm));
-
+	if (stage == QSEARCH_TT && depth <= DEPTH_QS_RECAPTURES && to_sq(ttm) != rs) stage++;
 }
 
 // 通常探索時にProbCutの処理から呼び出されるの専用
