@@ -2,7 +2,7 @@
 #if defined(USE_MOVE_PICKER)
 
 #include <algorithm>
-//#include <cassert>
+// #include <cassert>
 #include <iterator>
 #include <utility>
 
@@ -26,8 +26,10 @@ extern void super_sort(ExtMove* start, ExtMove* end);
 
 /*
   - 少し高速化されるらしい。
-  - 安定ソートではないので並び順が以前のとは異なるから、benchコマンドの探索ノード数は変わる。
-  - CPU targetによって実装が変わるのでCPUによってbenchコマンドの探索ノード数は変わる。
+  -
+  安定ソートではないので並び順が以前のとは異なるから、benchコマンドの探索ノード数は変わる。
+  - CPU
+  targetによって実装が変わるのでCPUによってbenchコマンドの探索ノード数は変わる。
 */
 #endif
 
@@ -125,19 +127,16 @@ enum Stages: int {
 // 現状、全体時間の6.5～7.5%程度をこの関数で消費している。
 // (長い時間思考させるとこの割合が増えてくる)
 void partial_insertion_sort(ExtMove* begin, ExtMove* end, int limit) {
-
-	for (ExtMove *sortedEnd = begin, *p = begin + 1; p < end; ++p)
-		if (p->value >= limit)
-		{
-			ExtMove tmp = *p, *q;
-			*p = *++sortedEnd;
-			for (q = sortedEnd; q != begin && *(q - 1) < tmp; --q)
-				*q = *(q - 1);
-			*q = tmp;
-		}
+  for (ExtMove *sortedEnd = begin, *p = begin + 1; p < end; ++p)
+    if (p->value >= limit) {
+      ExtMove tmp = *p, *q;
+      *p = *++sortedEnd;
+      for (q = sortedEnd; q != begin && *(q - 1) < tmp; --q) *q = *(q - 1);
+      *q = tmp;
+    }
 }
 
-} // end of namespace
+}  // end of namespace
 
 // 指し手オーダリング器
 
@@ -219,6 +218,8 @@ MovePicker::MovePicker(const Position& p, Move ttm, Depth d, const ButterflyHist
 			&& (pos.in_check() || depth > DEPTH_QS_RECAPTURES || to_sq(ttm) == recaptureSquare)
 			&& pos.pseudo_legal(ttm));
 
+  	if (stage == QSEARCH_TT && depth <= DEPTH_QS_RECAPTURES && to_sq(ttm) != rs)
+    	stage++;
 }
 
 // Constructor for ProbCut: we generate captures with SEE greater
@@ -257,20 +258,19 @@ MovePicker::MovePicker(const Position& p, Move ttm, Value th, const CapturePiece
 // captures with a good history. Quiets moves are ordered using the history tables.
 
 // QUIETS、EVASIONS、CAPTURESの指し手のオーダリングのためのスコアリング。似た処理なので一本化。
-template<MOVE_GEN_TYPE Type>
-void MovePicker::score()
-{
-	static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS, "Wrong type");
+template <MOVE_GEN_TYPE Type>
+void MovePicker::score() {
+  static_assert(Type == CAPTURES || Type == QUIETS || Type == EVASIONS,
+                "Wrong type");
 
-	// threatened        : 自分より価値の安い駒で当たりになっているか
-	// threatenedByPawn  : 敵の歩の利き。
-	// threatenedByMinor : 敵の歩・小駒による利き
-	// threatenedByRook  : 敵の大駒による利き(やねうら王では使わず)
+  // threatened        : 自分より価値の安い駒で当たりになっているか
+  // threatenedByPawn  : 敵の歩の利き。
+  // threatenedByMinor : 敵の歩・小駒による利き
+  // threatenedByRook  : 敵の大駒による利き(やねうら王では使わず)
 
 	// [[maybe_unused]] Bitboard threatenedByPawn, threatenedByMinor, threatenedByRook, threatenedPieces;
 
-	if constexpr (Type == QUIETS)
-	{
+  if constexpr (Type == QUIETS) {
 #if 0
 		Color us = pos.side_to_move();
 		// squares threatened by pawns
@@ -458,7 +458,6 @@ Move MovePicker::select(Pred filter) {
 // 置換表の指し手(ttMove)を返したあとは、それを取り除いた指し手を返す。
 // skipQuiets : これがtrueだとQUIETな指し手は返さない。
 Move MovePicker::next_move(bool skipQuiets) {
-
 top:
 	switch (stage) {
 
@@ -576,10 +575,10 @@ top:
 
 
 #if defined(USE_SUPER_SORT) && defined(USE_AVX2)
-			// curを32の倍数アドレスになるように少し進めてしまう。
-			// これにより、curがalignas(32)されているような効果がある。
-			// このあとSuperSortを使うときにこれが前提条件として必要。
-			cur = (ExtMove*)Math::align((size_t)cur, 32);
+        // curを32の倍数アドレスになるように少し進めてしまう。
+        // これにより、curがalignas(32)されているような効果がある。
+        // このあとSuperSortを使うときにこれが前提条件として必要。
+        cur = (ExtMove*)Math::align((size_t)cur, 32);
 #endif
 
 #if defined(GENERATE_PRO_PLUS)
@@ -589,11 +588,11 @@ top:
 #endif
 			// 注意 : ここ⇑、CAPTURE_INITで生成した指し手に歩の成りの指し手が含まれているなら、それを除外しなければならない。
 
-			// 駒を捕獲しない指し手に対してオーダリングのためのスコアをつける
-			score<QUIETS>();
+        // 駒を捕獲しない指し手に対してオーダリングのためのスコアをつける
+        score<QUIETS>();
 
-			// 指し手を部分的にソートする。depthに線形に依存する閾値で。
-			// (depthが低いときに真面目に全要素ソートするのは無駄だから)
+        // 指し手を部分的にソートする。depthに線形に依存する閾値で。
+        // (depthが低いときに真面目に全要素ソートするのは無駄だから)
 
 			// メモ書き)
 			//
@@ -716,4 +715,4 @@ top:
 	return MOVE_NONE; // Silence warning
 }
 
-#endif // defined(USE_MOVE_PICKER)
+#endif  // defined(USE_MOVE_PICKER)
