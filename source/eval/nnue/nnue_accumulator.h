@@ -18,6 +18,8 @@ namespace NNUE {
 struct alignas(32) Accumulator {
   std::int16_t
       accumulation[2][kRefreshTriggers.size()][kTransformedFeatureDimensions];
+  std::int32_t psqtAccumulation[2];
+
   Value score = VALUE_ZERO;
   bool computed_accumulation = false;
   bool computed_score = false;

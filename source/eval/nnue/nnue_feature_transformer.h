@@ -118,6 +118,10 @@ class FeatureTransformer {
 		for (std::size_t i = 0; i < kHalfDimensions; ++i) biases_[i] = read_little_endian<BiasType>(stream);
 		for (std::size_t i = 0; i < kHalfDimensions * kInputDimensions; ++i)
 			weights_[i] = read_little_endian<WeightType>(stream);
+#if 1
+		for (std::size_t i = 0; i < kInputDimensions; ++i) 
+			psqt_weights_[i] = read_little_endian<PSQTWeightType>(stream);
+#endif
 		return !stream.fail();
 	}
 
@@ -126,6 +130,9 @@ class FeatureTransformer {
 	bool WriteParameters(std::ostream& stream) const {
 		stream.write(reinterpret_cast<const char*>(biases_), kHalfDimensions * sizeof(BiasType));
 		stream.write(reinterpret_cast<const char*>(weights_), kHalfDimensions * kInputDimensions * sizeof(WeightType));
+#if 1
+		stream.write(reinterpret_cast<const char*>(psqt_weights_), kInputDimensions * sizeof(PSQTWeightType));
+#endif
 		return !stream.fail();
 	}
 
@@ -146,11 +153,25 @@ class FeatureTransformer {
 
 	// Convert input features
 	// 入力特徴量を変換する
-	void Transform(const Position& pos, OutputType* output, bool refresh) const {
+#if 1
+	std::int32_t
+#else
+	void
+#endif
+	Transform(const Position& pos, OutputType* output, bool refresh) const {
 		if (refresh || !UpdateAccumulatorIfPossible(pos)) {
 			refresh_accumulator(pos);
 		}
+		const Color perspectives[2] = {pos.side_to_move(), ~pos.side_to_move()};
 		const auto& accumulation = pos.state()->accumulator.accumulation;
+#if 1
+		const auto& psqtAccumulation = pos.state()->accumulator.psqtAccumulation;
+
+      	const auto psqt = (
+            psqtAccumulation[perspectives[0]]
+          - psqtAccumulation[perspectives[1]]
+        ) / 2;
+#endif
 
 #if defined(USE_AVX512)
 		constexpr IndexType kNumChunks = kHalfDimensions / (kSimdWidth * 2);
@@ -180,7 +201,6 @@ class FeatureTransformer {
 		constexpr IndexType kNumChunks = kHalfDimensions / (kSimdWidth / 2);
 		const int8x8_t      kZero      = {0};
 #endif
-		const Color perspectives[2] = {pos.side_to_move(), ~pos.side_to_move()};
 		for (IndexType p = 0; p < 2; ++p) {
 			const IndexType offset = kHalfDimensions * p;
 #if defined(USE_AVX512)
@@ -268,6 +288,9 @@ class FeatureTransformer {
 		// USE_MMX を config.h では現状、有効化することがないので dead code
 		_mm_empty();
 #endif
+#if 1
+		return psqt;
+#endif
 	}
 
    private:
@@ -285,6 +308,7 @@ class FeatureTransformer {
 				} else {
 					std::memset(accumulator.accumulation[perspective][i], 0, kHalfDimensions * sizeof(BiasType));
 				}
+				accumulator.psqtAccumulation[perspective] = 0;
 				for (const auto index : active_indices[perspective]) {
 					const IndexType offset = kHalfDimensions * index;
 					auto accumulation      = reinterpret_cast<vec_t*>(&accumulator.accumulation[perspective][i][0]);
@@ -293,6 +317,7 @@ class FeatureTransformer {
 					for (IndexType j = 0; j < kNumChunks; ++j) {
 						accumulation[j] = vec_add_16(accumulation[j], column[j]);
 					}
+					accumulator.psqtAccumulation[perspective] += psqt_weights_[index];
 				}
 #else
 				if (i == 0) {
@@ -300,12 +325,14 @@ class FeatureTransformer {
 				} else {
 					std::memset(accumulator.accumulation[perspective][i], 0, kHalfDimensions * sizeof(BiasType));
 				}
+				accumulator.psqtAccumulation[perspective] = 0;
 				for (const auto index : active_indices[perspective]) {
 					const IndexType offset = kHalfDimensions * index;
 
 					for (IndexType j = 0; j < kHalfDimensions; ++j) {
 						accumulator.accumulation[perspective][i][j] += weights_[offset + j];
 					}
+					accumulator.psqtAccumulation[perspective] += psqt_weights_[index];
 				}
 #endif
 			}
@@ -337,6 +364,7 @@ class FeatureTransformer {
 					} else {
 						std::memset(accumulator.accumulation[perspective][i], 0, kHalfDimensions * sizeof(BiasType));
 					}
+					accumulator.psqtAccumulation[perspective] = 0;
 				} else {
 					// Difference calculation for the feature amount changed from 1 to 0
 					// 1から0に変化した特徴量に関する差分計算
@@ -354,6 +382,7 @@ class FeatureTransformer {
 							accumulator.accumulation[perspective][i][j] -= weights_[offset + j];
 						}
 #endif
+                        accumulator.psqtAccumulation[perspective] -= psqt_weights_[index];
 					}
 				}
 				{
@@ -371,6 +400,7 @@ class FeatureTransformer {
 							accumulator.accumulation[perspective][i][j] += weights_[offset + j];
 						}
 #endif
+                        accumulator.psqtAccumulation[perspective] += psqt_weights_[index];
 					}
 				}
 			}
@@ -385,6 +415,7 @@ class FeatureTransformer {
 	// パラメータの型
 	using BiasType   = std::int16_t;
 	using WeightType = std::int16_t;
+	using PSQTWeightType = std::int32_t;
 
 	// Make the learning class a friend
 	// 学習用クラスをfriendにする
@@ -394,6 +425,7 @@ class FeatureTransformer {
 	// パラメータ
 	alignas(kCacheLineSize) BiasType biases_[kHalfDimensions];
 	alignas(kCacheLineSize) WeightType weights_[kHalfDimensions * kInputDimensions];
+	alignas(kCacheLineSize) PSQTWeightType psqt_weights_[kInputDimensions];
 };  // class FeatureTransformer
 
 }  // namespace Eval::NNUE

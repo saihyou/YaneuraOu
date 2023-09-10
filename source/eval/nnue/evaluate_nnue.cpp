@@ -137,7 +137,8 @@ namespace Eval {
 
             alignas(kCacheLineSize) TransformedFeatureType
                 transformed_features[FeatureTransformer::kBufferSize];
-            feature_transformer->Transform(pos, transformed_features, refresh);
+            auto psqt =
+                feature_transformer->Transform(pos, transformed_features, refresh);
 #if USE_STOCKFISH_NNUE
             const auto output = network->Propagate(transformed_features);
 #else
@@ -157,7 +158,12 @@ namespace Eval {
             // しかし、教師生成時などdepth固定で探索するときに探索から戻ってこなくなるので
             // そのスレッドの計算時間を無駄にする。またdepth固定対局でtime-outするようになる。
 #if USE_STOCKFISH_NNUE
+#if 1
+            constexpr int delta = 24;
+            auto score = static_cast<Value>(((1024 - delta) * psqt + (1024 + delta) * output) / (1024 * FV_SCALE));
+#else
             auto score = static_cast<Value>(output / FV_SCALE);
+#endif
 #else
             auto score = static_cast<Value>(output[0] / FV_SCALE);
 #endif
