@@ -45,6 +45,9 @@
 #elif defined(EVAL_NNUE_HALFKA_512X2_8X2_32)
 #include "architectures/halfka_512x2-8x2-32.h"
 
+#elif defined(EVAL_NNUE_HALFKAE_512X2_8X2_32)
+#include "architectures/halfkae_512x2-8x2-32.h"
+
 #else
 
 // どれも定義されていなかったので標準NNUE型にしておく。
