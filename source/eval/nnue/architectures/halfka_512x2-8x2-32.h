@@ -8,7 +8,6 @@
 #include "../features/feature_set.h"
 #include "../features/half_ka.h"
 
-#include "../stockfish_nnue/layers/affine_transform_sparse_input.h"
 #include "../stockfish_nnue/layers/affine_transform.h"
 #include "../stockfish_nnue/layers/clipped_relu.h"
 #include "../stockfish_nnue/layers/sqr_clipped_relu.h"
