@@ -70,7 +70,7 @@ PARAM_DEFINE PARAM_FUTILITY_MARGIN_ALPHA2 = 43;
 // 重要度　★★★★☆
 // 元の値 = 138 , step = 30
 // [PARAM] min:100,max:240,step:30,interval:2,time_rate:1,fixed
-PARAM_DEFINE PARAM_FUTILITY_MARGIN_BETA = 108;
+PARAM_DEFINE PARAM_FUTILITY_MARGIN_BETA = 138;
 
 // 重要度　★★★☆☆
 // 元の値 = Stockfish 14 : 197 , Stockfish 16 : 239 , step = 20
@@ -88,7 +88,7 @@ PARAM_DEFINE PARAM_FUTILITY_EVAL2 = 291;
 // 重要度　★★★★☆
 // 元の値 = Stockfish 14 : 200 , Stockfish 16 : 200 , step = 20
 // [PARAM] min:50,max:300,step:30,interval:1,time_rate:1,
-PARAM_DEFINE PARAM_FUTILITY_MARGIN_QUIET = 170;
+PARAM_DEFINE PARAM_FUTILITY_MARGIN_QUIET = 200;
 
 // futility pruningの適用depth。
 // 重要度　★★★☆☆
@@ -125,7 +125,7 @@ PARAM_DEFINE PARAM_FUTILITY_AT_PARENT_NODE_GAMMA1 = 26;
 // Stockfishの7,8割ぐらいの値にするのがよさげ。
 // 元の値 = 185 ,step = 40
 // [PARAM] min:0,max:300,step:10,interval:1,time_rate:1
-PARAM_DEFINE PARAM_LMR_SEE_MARGIN1 = 175;
+PARAM_DEFINE PARAM_LMR_SEE_MARGIN1 = 185;
 
 
 
@@ -136,7 +136,7 @@ PARAM_DEFINE PARAM_LMR_SEE_MARGIN1 = 175;
 // 重要度　★★★☆☆
 // 元の値 = Stockfish 14 : 173 , Stockfish 16 : 152 , step = 10
 // [PARAM] min:50,max:400,step:10,interval:1,time_rate:1,
-PARAM_DEFINE PARAM_NULL_MOVE_DYNAMIC_GAMMA = 132;
+PARAM_DEFINE PARAM_NULL_MOVE_DYNAMIC_GAMMA = 152;
 
 // 重要度　★★★☆☆
 // 元の値 = 24 , step = 2
@@ -175,7 +175,7 @@ PARAM_DEFINE PARAM_PROBCUT_MARGIN1 = 168;
 // 元の値 = 70 , step = 10
 // 重要度　★★★☆☆
 // [PARAM] min:20,max:100,step:5,interval:2,time_rate:1,fixed
-PARAM_DEFINE PARAM_PROBCUT_MARGIN2 = 65;
+PARAM_DEFINE PARAM_PROBCUT_MARGIN2 = 70;
 
 // 前のバージョンのStockfishではこの値は481。
 // 重要度　★★★☆☆
@@ -221,7 +221,7 @@ PARAM_DEFINE PARAM_LMR_MARGIN1 = 51;
 // 元の値 = 10 , step = 1
 // min:0,max:128,step:1,interval:1,time_rate:1,
 // [PARAM] min:13,max:14,step:1,interval:1,time_rate:1,fixed
-PARAM_DEFINE PARAM_LMR_MARGIN2 = 13;
+PARAM_DEFINE PARAM_LMR_MARGIN2 = 10;
 
 //
 // in qsearch
