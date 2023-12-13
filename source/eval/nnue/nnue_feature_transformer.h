@@ -15,6 +15,10 @@
 #include <cstring>  // std::memset()
 
 namespace Eval::NNUE {
+// parameter type
+// パラメータの型
+using BiasType   = std::int16_t;
+using WeightType = std::int16_t;
 
 // If vector instructions are enabled, we update and refresh the
 // accumulator tile by tile such that each tile fits in the CPU's
@@ -23,55 +27,155 @@ namespace Eval::NNUE {
 // 各タイルがCPUのベクトルレジスタに収まるように、更新してリフレッシュする。
 #define VECTOR
 
-#if defined(USE_AVX512)
-using vec_t = __m512i;
-#define vec_load(a) _mm512_load_si512(a)
-#define vec_store(a, b) _mm512_store_si512(a, b)
-#define vec_add_16(a, b) _mm512_add_epi16(a, b)
-#define vec_sub_16(a, b) _mm512_sub_epi16(a, b)
-#define vec_zero _mm512_setzero_si512()
-static constexpr IndexType kNumRegs = 8;  // only 8 are needed
+//static_assert(PSQTBuckets % 8 == 0,
+//              "Per feature PSQT values cannot be processed at granularity lower than 8 at a time.");
 
-#elif defined(USE_AVX2)
-using vec_t = __m256i;
-#define vec_load(a) _mm256_load_si256(a)
-#define vec_store(a, b) _mm256_store_si256(a, b)
-#define vec_add_16(a, b) _mm256_add_epi16(a, b)
-#define vec_sub_16(a, b) _mm256_sub_epi16(a, b)
-#define vec_zero _mm256_setzero_si256()
-static constexpr IndexType kNumRegs = 16;
+#ifdef USE_AVX512
+using vec_t      = __m512i;
+using psqt_vec_t = __m256i;
+    #define vec_load(a) _mm512_load_si512(a)
+    #define vec_store(a, b) _mm512_store_si512(a, b)
+    #define vec_add_16(a, b) _mm512_add_epi16(a, b)
+    #define vec_sub_16(a, b) _mm512_sub_epi16(a, b)
+    #define vec_mul_16(a, b) _mm512_mullo_epi16(a, b)
+    #define vec_zero() _mm512_setzero_epi32()
+    #define vec_set_16(a) _mm512_set1_epi16(a)
+    #define vec_max_16(a, b) _mm512_max_epi16(a, b)
+    #define vec_min_16(a, b) _mm512_min_epi16(a, b)
+inline vec_t vec_msb_pack_16(vec_t a, vec_t b) {
+    vec_t compacted = _mm512_packs_epi16(_mm512_srli_epi16(a, 7), _mm512_srli_epi16(b, 7));
+    return _mm512_permutexvar_epi64(_mm512_setr_epi64(0, 2, 4, 6, 1, 3, 5, 7), compacted);
+}
+    #define vec_load_psqt(a) _mm256_load_si256(a)
+    #define vec_store_psqt(a, b) _mm256_store_si256(a, b)
+    #define vec_add_psqt_32(a, b) _mm256_add_epi32(a, b)
+    #define vec_sub_psqt_32(a, b) _mm256_sub_epi32(a, b)
+    #define vec_zero_psqt() _mm256_setzero_si256()
+    #define NumRegistersSIMD 16
+    #define MaxChunkSize 64
 
-#elif defined(USE_SSE2)
-using vec_t = __m128i;
-#define vec_load(a) (*(a))
-#define vec_store(a, b) *(a) = (b)
-#define vec_add_16(a, b) _mm_add_epi16(a, b)
-#define vec_sub_16(a, b) _mm_sub_epi16(a, b)
-#define vec_zero _mm_setzero_si128()
-static constexpr IndexType kNumRegs = Is64Bit ? 16 : 8;
+#elif USE_AVX2
+using vec_t      = __m256i;
+using psqt_vec_t = __m256i;
+    #define vec_load(a) _mm256_load_si256(a)
+    #define vec_store(a, b) _mm256_store_si256(a, b)
+    #define vec_add_16(a, b) _mm256_add_epi16(a, b)
+    #define vec_sub_16(a, b) _mm256_sub_epi16(a, b)
+    #define vec_mul_16(a, b) _mm256_mullo_epi16(a, b)
+    #define vec_zero() _mm256_setzero_si256()
+    #define vec_set_16(a) _mm256_set1_epi16(a)
+    #define vec_max_16(a, b) _mm256_max_epi16(a, b)
+    #define vec_min_16(a, b) _mm256_min_epi16(a, b)
+inline vec_t vec_msb_pack_16(vec_t a, vec_t b) {
+    vec_t compacted = _mm256_packs_epi16(_mm256_srli_epi16(a, 7), _mm256_srli_epi16(b, 7));
+    return _mm256_permute4x64_epi64(compacted, 0b11011000);
+}
+    #define vec_load_psqt(a) _mm256_load_si256(a)
+    #define vec_store_psqt(a, b) _mm256_store_si256(a, b)
+    #define vec_add_psqt_32(a, b) _mm256_add_epi32(a, b)
+    #define vec_sub_psqt_32(a, b) _mm256_sub_epi32(a, b)
+    #define vec_zero_psqt() _mm256_setzero_si256()
+    #define NumRegistersSIMD 16
+    #define MaxChunkSize 32
 
-#elif defined(USE_MMX)
-using vec_t = __m64;
-#define vec_load(a) (*(a))
-#define vec_store(a, b) *(a) = (b)
-#define vec_add_16(a, b) _mm_add_pi16(a, b)
-#define vec_sub_16(a, b) _mm_sub_pi16(a, b)
-#define vec_zero _mm_setzero_si64()
-static constexpr IndexType kNumRegs = 8;
+#elif USE_SSE2
+using vec_t      = __m128i;
+using psqt_vec_t = __m128i;
+    #define vec_load(a) (*(a))
+    #define vec_store(a, b) *(a) = (b)
+    #define vec_add_16(a, b) _mm_add_epi16(a, b)
+    #define vec_sub_16(a, b) _mm_sub_epi16(a, b)
+    #define vec_mul_16(a, b) _mm_mullo_epi16(a, b)
+    #define vec_zero() _mm_setzero_si128()
+    #define vec_set_16(a) _mm_set1_epi16(a)
+    #define vec_max_16(a, b) _mm_max_epi16(a, b)
+    #define vec_min_16(a, b) _mm_min_epi16(a, b)
+    #define vec_msb_pack_16(a, b) _mm_packs_epi16(_mm_srli_epi16(a, 7), _mm_srli_epi16(b, 7))
+    #define vec_load_psqt(a) (*(a))
+    #define vec_store_psqt(a, b) *(a) = (b)
+    #define vec_add_psqt_32(a, b) _mm_add_epi32(a, b)
+    #define vec_sub_psqt_32(a, b) _mm_sub_epi32(a, b)
+    #define vec_zero_psqt() _mm_setzero_si128()
+    #define NumRegistersSIMD (Is64Bit ? 16 : 8)
+    #define MaxChunkSize 16
 
-#elif defined(USE_NEON)
-using vec_t = int16x8_t;
-#define vec_load(a) (*(a))
-#define vec_store(a, b) *(a) = (b)
-#define vec_add_16(a, b) vaddq_s16(a, b)
-#define vec_sub_16(a, b) vsubq_s16(a, b)
-#define vec_zero \
-	{ 0 }
-static constexpr IndexType kNumRegs = 16;
+#elif USE_NEON
+using vec_t      = int16x8_t;
+using psqt_vec_t = int32x4_t;
+    #define vec_load(a) (*(a))
+    #define vec_store(a, b) *(a) = (b)
+    #define vec_add_16(a, b) vaddq_s16(a, b)
+    #define vec_sub_16(a, b) vsubq_s16(a, b)
+    #define vec_mul_16(a, b) vmulq_s16(a, b)
+    #define vec_zero() \
+        vec_t { 0 }
+    #define vec_set_16(a) vdupq_n_s16(a)
+    #define vec_max_16(a, b) vmaxq_s16(a, b)
+    #define vec_min_16(a, b) vminq_s16(a, b)
+inline vec_t vec_msb_pack_16(vec_t a, vec_t b) {
+    const int8x8_t  shifta    = vshrn_n_s16(a, 7);
+    const int8x8_t  shiftb    = vshrn_n_s16(b, 7);
+    const int8x16_t compacted = vcombine_s8(shifta, shiftb);
+    return *reinterpret_cast<const vec_t*>(&compacted);
+}
+    #define vec_load_psqt(a) (*(a))
+    #define vec_store_psqt(a, b) *(a) = (b)
+    #define vec_add_psqt_32(a, b) vaddq_s32(a, b)
+    #define vec_sub_psqt_32(a, b) vsubq_s32(a, b)
+    #define vec_zero_psqt() \
+        psqt_vec_t { 0 }
+    #define NumRegistersSIMD 16
+    #define MaxChunkSize 16
 
 #else
-#undef VECTOR
+    #undef VECTOR
 
+#endif
+
+
+#ifdef VECTOR
+
+    // Compute optimal SIMD register count for feature transformer accumulation.
+
+    // We use __m* types as template arguments, which causes GCC to emit warnings
+    // about losing some attribute information. This is irrelevant to us as we
+    // only take their size, so the following pragma are harmless.
+    #if defined(__GNUC__)
+        #pragma GCC diagnostic push
+        #pragma GCC diagnostic ignored "-Wignored-attributes"
+    #endif
+
+template<typename SIMDRegisterType, typename LaneType, int NumLanes, int MaxRegisters>
+static constexpr int BestRegisterCount() {
+    #define RegisterSize sizeof(SIMDRegisterType)
+    #define LaneSize sizeof(LaneType)
+
+    static_assert(RegisterSize >= LaneSize);
+    static_assert(MaxRegisters <= NumRegistersSIMD);
+    static_assert(MaxRegisters > 0);
+    static_assert(NumRegistersSIMD > 0);
+    static_assert(RegisterSize % LaneSize == 0);
+    static_assert((NumLanes * LaneSize) % RegisterSize == 0);
+
+    const int ideal = (NumLanes * LaneSize) / RegisterSize;
+    if (ideal <= MaxRegisters)
+        return ideal;
+
+    // Look for the largest divisor of the ideal register count that is smaller than MaxRegisters
+    for (int divisor = MaxRegisters; divisor > 1; --divisor)
+        if (ideal % divisor == 0)
+            return divisor;
+
+    return 1;
+}
+
+static constexpr int NumRegs =
+  BestRegisterCount<vec_t, WeightType, kTransformedFeatureDimensions, NumRegistersSIMD>();
+//static constexpr int NumPsqtRegs =
+//  BestRegisterCount<psqt_vec_t, PSQTWeightType, PSQTBuckets, NumRegistersSIMD>();
+    #if defined(__GNUC__)
+        #pragma GCC diagnostic pop
+    #endif
 #endif
 
 // Input feature converter
@@ -83,7 +187,7 @@ class FeatureTransformer {
 	static constexpr IndexType kHalfDimensions = kTransformedFeatureDimensions;
 
 #if defined(VECTOR)
-	static constexpr IndexType kTileHeight = kNumRegs * sizeof(vec_t) / 2;
+	static constexpr IndexType kTileHeight = NumRegs * sizeof(vec_t) / 2;
 	static_assert(kHalfDimensions % kTileHeight == 0, "kTileHeight must divide kHalfDimensions");
 #endif
 
@@ -95,8 +199,11 @@ class FeatureTransformer {
 	// Number of input/output dimensions
 	// 入出力の次元数
 	static constexpr IndexType kInputDimensions  = RawFeatures::kDimensions;
+#if defined(USE_ELEMENT_WISE_MULTIPLY)
+	static constexpr IndexType kOutputDimensions = kHalfDimensions;
+#else
 	static constexpr IndexType kOutputDimensions = kHalfDimensions * 2;
-
+#endif
 	// Size of forward propagation buffer
 	// 順伝播用バッファのサイズ
 	static constexpr std::size_t kBufferSize = kOutputDimensions * sizeof(OutputType);
@@ -152,6 +259,54 @@ class FeatureTransformer {
 		}
 		const auto& accumulation = pos.state()->accumulator.accumulation;
 
+#if defined(USE_ELEMENT_WISE_MULTIPLY)
+		const Color perspectives[2] = {pos.side_to_move(), ~pos.side_to_move()};
+		for (IndexType p = 0; p < 2; ++p)
+        {
+            const IndexType offset = (kHalfDimensions / 2) * p;
+
+#if defined(VECTOR)
+
+            constexpr IndexType OutputChunkSize = MaxChunkSize;
+            static_assert((kHalfDimensions / 2) % OutputChunkSize == 0);
+            constexpr IndexType NumOutputChunks = kHalfDimensions / 2 / OutputChunkSize;
+
+            vec_t Zero = vec_zero();
+            vec_t One  = vec_set_16(127);
+
+            const vec_t* in0 = reinterpret_cast<const vec_t*>(&(accumulation[perspectives[p]][0][0]));
+            const vec_t* in1 =
+              reinterpret_cast<const vec_t*>(&(accumulation[perspectives[p]][0][kHalfDimensions / 2]));
+            vec_t* out = reinterpret_cast<vec_t*>(output + offset);
+
+            for (IndexType j = 0; j < NumOutputChunks; j += 1)
+            {
+                const vec_t sum0a = vec_max_16(vec_min_16(in0[j * 2 + 0], One), Zero);
+                const vec_t sum0b = vec_max_16(vec_min_16(in0[j * 2 + 1], One), Zero);
+                const vec_t sum1a = vec_max_16(vec_min_16(in1[j * 2 + 0], One), Zero);
+                const vec_t sum1b = vec_max_16(vec_min_16(in1[j * 2 + 1], One), Zero);
+
+                const vec_t pa = vec_mul_16(sum0a, sum1a);
+                const vec_t pb = vec_mul_16(sum0b, sum1b);
+
+                out[j] = vec_msb_pack_16(pa, pb);
+            }
+
+#else
+
+            for (IndexType j = 0; j < kHalfDimensions / 2; ++j)
+            {
+                BiasType sum0 = accumulation[static_cast<int>(perspectives[p])][0][j + 0];
+                BiasType sum1 =
+                  accumulation[static_cast<int>(perspectives[p])][0][j + kHalfDimensions / 2];
+                sum0               = std::clamp<BiasType>(sum0, 0, 127);
+                sum1               = std::clamp<BiasType>(sum1, 0, 127);
+                output[offset + j] = static_cast<OutputType>(unsigned(sum0 * sum1) / 128);
+            }
+
+#endif
+        }
+#else
 #if defined(USE_AVX512)
 		constexpr IndexType kNumChunks = kHalfDimensions / (kSimdWidth * 2);
 		static_assert(kHalfDimensions % (kSimdWidth * 2) == 0);
@@ -264,6 +419,7 @@ class FeatureTransformer {
 			}
 #endif
 		}
+#endif
 #if defined(USE_MMX)
 		// USE_MMX を config.h では現状、有効化することがないので dead code
 		_mm_empty();
@@ -380,11 +536,6 @@ class FeatureTransformer {
 		// Stockfishでは fc27d15(2020-09-07) にcomputed_scoreが排除されているので確認
 		accumulator.computed_score = false;
 	}
-
-	// parameter type
-	// パラメータの型
-	using BiasType   = std::int16_t;
-	using WeightType = std::int16_t;
 
 	// Make the learning class a friend
 	// 学習用クラスをfriendにする
