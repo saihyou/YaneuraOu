@@ -210,7 +210,11 @@ class FeatureTransformer {
 
 	// Hash value embedded in the evaluation file
 	// 評価関数ファイルに埋め込むハッシュ値
+#if defined(USE_ELEMENT_WISE_MULTIPLY)
+	static constexpr std::uint32_t GetHashValue() { return RawFeatures::kHashValue ^ (kOutputDimensions * 2); }
+#else
 	static constexpr std::uint32_t GetHashValue() { return RawFeatures::kHashValue ^ kOutputDimensions; }
+#endif
 
 	// A string that represents the structure
 	// 構造を表す文字列
