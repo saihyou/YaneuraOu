@@ -245,7 +245,7 @@ constexpr int futility_move_count(bool improving, int depth) {
 // History and stats update bonus, based on depth
 // depthに基づく、historyとstatsのupdate bonus
 
-int stat_bonus(Depth d) { return std::min(291 * d - 350, 1200); }
+int stat_bonus(Depth d) { return std::min(268 * d - 352, 1153); }
 	// →　やねうら王では、Stockfishの統計値、統計ボーナスに関して手を加えないことにしているので
 	// この値はStockfishの値そのまま。
 
@@ -254,7 +254,7 @@ int stat_bonus(Depth d) { return std::min(291 * d - 350, 1200); }
 // ※ malus(「悪い」、「不利益」みたいな意味)は
 // 「統計的なペナルティ」または「マイナスの修正値」を計算するために使用される。
 // この関数は、ある行動が望ましくない結果をもたらした場合に、その行動の評価を減少させるために使われる
-int stat_malus(Depth d) { return std::min(361 * d - 361, 1182); }
+int stat_malus(Depth d) { return std::min(400 * d - 354, 1201); }
 
 
 #if 0
@@ -1056,7 +1056,7 @@ void Thread::search()
 			beta  = std::min(avg + delta, VALUE_INFINITE);
 
 			// Adjust optimism based on root move's previousScore (~4 Elo)
-            //optimism[us]  = 110 * avg / (std::abs(avg) + 121);
+            //optimism[us]  = 121 * avg / (std::abs(avg) + 109);
             //optimism[~us] = -optimism[us];
 			// → このoptimismは、StockfishのNNUE評価関数で何やら使っているようなのだが…。
 
@@ -2015,7 +2015,7 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
 
 	if (is_ok((ss - 1)->currentMove) && !(ss - 1)->inCheck && !priorCapture)
 	{
-	    int bonus = std::clamp(-14 * int((ss - 1)->staticEval + ss->staticEval), -1449, 1449);
+	    int bonus = std::clamp(-13 * int((ss - 1)->staticEval + ss->staticEval), -1555, 1452);
 		// この右辺の↑係数、調整すべきだろうけども、4 Eloのところ調整しても…みたいな意味はある。
 
 		thisThread->mainHistory(~us, from_to((ss - 1)->currentMove)) << bonus;
@@ -2065,7 +2065,7 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
 	// TODO : ここのパラメーター調整するか考える。
 	// → ~1 Eloだとなー。
 
-	if (eval < alpha - 474 - (270 - 174 * ((ss + 1)->cutoffCnt > 3)) * depth * depth)
+	if (eval < alpha - 472 - (284 - 165 * ((ss + 1)->cutoffCnt > 3)) * depth * depth)
 	{
 		value = qsearch<NonPV>(pos, ss, alpha - 1, alpha);
 		if (value < alpha)
@@ -2092,9 +2092,9 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
 	if (   !ss->ttPv
 		&&  depth < PARAM_FUTILITY_RETURN_DEPTH/*9*/
 		&&  eval - futility_margin(depth, cutNode && !ss->ttHit, improving)
-				- (ss - 1)->statScore / 321 >= beta
+				- (ss - 1)->statScore / 337 >= beta
 		&&  eval >= beta
-		&&  eval < 29462 // smaller than TB wins
+		&&  eval < 29008 // smaller than TB wins
 		&& (!ttMove || ttCapture))
 
 		// 29462の根拠はよくわからないが、VALUE_TB_WIN_IN_MAX_PLY より少し小さい値にしたいようだ。
@@ -2120,7 +2120,7 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
 	//  evalの見積りがbetaを超えているので1手パスしてもbetaは超えそう。
 	if (   !PvNode
 		&& (ss - 1)->currentMove != MOVE_NULL
-		&& (ss - 1)->statScore < 17257
+		&& (ss - 1)->statScore < 17496
 		&&  eval >= beta
 		&&  eval >= ss->staticEval
 		&&  ss->staticEval >= beta - PARAM_NULL_MOVE_MARGIN1 * depth + PARAM_NULL_MOVE_MARGIN2
@@ -2517,12 +2517,12 @@ moves_loop:
 				// Continuation history based pruning (~2 Elo)
 				// Continuation historyに基づいた枝刈り(historyの値が悪いものに関してはskip)
 
-				if (lmrDepth < PARAM_PRUNING_BY_HISTORY_DEPTH && history < -3645 * depth)
+				if (lmrDepth < PARAM_PRUNING_BY_HISTORY_DEPTH && history < -3752 * depth)
 					continue;
 
 				history += 2 * thisThread->mainHistory(us, from_to(move));
 
-				lmrDepth += history / 7836;
+				lmrDepth += history / 7838;
 				lmrDepth = std::max(lmrDepth, -1);
 
 				// Futility pruning: parent node (~13 Elo)
@@ -2533,7 +2533,7 @@ moves_loop:
 
 				if (   !ss->inCheck
 					&& lmrDepth < PARAM_FUTILITY_AT_PARENT_NODE_DEPTH
-					&& ss->staticEval + (bestValue < ss->staticEval - 62 ? 123 : 77)
+					&& ss->staticEval + (bestValue < ss->staticEval - 57 ? 124 : 71)
 						+ PARAM_FUTILITY_AT_PARENT_NODE_ALPHA * lmrDepth <= alpha)
 					continue;
 
@@ -2596,7 +2596,7 @@ moves_loop:
 			if (!rootNode
 				&&  move == ttMove
 				&& !excludedMove // 再帰的なsingular延長を除外する。
-		        &&  depth >= PARAM_SINGULAR_EXTENSION_DEPTH - (thisThread->completedDepth > 24) + 2 * (PvNode && tte->is_pv())
+		        &&  depth >= PARAM_SINGULAR_EXTENSION_DEPTH - (thisThread->completedDepth > 27) + 2 * (PvNode && tte->is_pv())
 			/*  &&  ttValue != VALUE_NONE Already implicit in the next condition */
 				&&  std::abs(ttValue) < VALUE_TB_WIN_IN_MAX_PLY // 詰み絡みのスコアはsingular extensionはしない。(Stockfish 10～)
 				&& (tte->bound() & BOUND_LOWER)
@@ -2632,7 +2632,7 @@ moves_loop:
 					// TODO : ここのパラメーター、調整すべきかも？
 
 					if (  !PvNode
-						&& value < singularBeta - 18
+						&& value < singularBeta - 17
 						&& ss->doubleExtensions <= 11)
 					{
 						extension = 2;
@@ -2707,7 +2707,7 @@ moves_loop:
 			//  それでもまだやりすぎの感はある。やねうら王では、延長の条件をさらに絞る。
 
 			else if (givesCheck
-				&& depth > 9
+				&& depth > 10
 				// !!重要!!
 				// この条件、やねうら王では独自に追加している。
 				// →　王手延長は、開き王手と駒損しない王手に限定する。
@@ -2724,13 +2724,13 @@ moves_loop:
 			else if (PvNode
 				&& move == ttMove
 				&& move == ss->killers[0]
-				&& (*contHist[0])(movedPiece, to_sq(move)) >= 4194)
+				&& (*contHist[0])(movedPiece, to_sq(move)) >= 4325)
 				extension = 1;
 
             // Recapture extensions (~1 Elo)
             else if (PvNode && move == ttMove && to_sq(move) == prevSq
                      && captureHistory(movedPiece, to_sq(move), type_of(pos.piece_on(to_sq(move))))
-                          > 4000)
+                          > 4146)
                 extension = 1;
 		}
 
@@ -2848,10 +2848,10 @@ moves_loop:
 						+     (*contHist[0])(movedPiece, to_sq(move))
 						+     (*contHist[1])(movedPiece, to_sq(move))
 						+     (*contHist[3])(movedPiece, to_sq(move))
-						- 3848;
+						- 3817;
 			
 		// Decrease/increase reduction for moves with a good/bad history (~25 Elo)
-		r -= ss->statScore / (10216 + 3855 * (depth > 5 && depth < 23));
+		r -= ss->statScore / 14767;
 
 		// -----------------------
 		// Step 17. Late moves reduction / extension (LMR, ~117 Elo)
@@ -2903,7 +2903,7 @@ moves_loop:
 				// Adjust full-depth search based on LMR results - if the result
 				// was good enough search deeper, if it was bad enough search shallower
 
-				const bool doDeeperSearch     = value > (bestValue + 50 + 2 * newDepth); // (~1 Elo)
+				const bool doDeeperSearch     = value > (bestValue + 53 + 2 * newDepth); // (~1 Elo)
 				const bool doShallowerSearch  = value <  bestValue + newDepth;           // (~2 Elo)
 
 				newDepth += doDeeperSearch - doShallowerSearch;
@@ -3094,8 +3094,8 @@ moves_loop:
 
 					if (   depth > 2
 						&& depth < 12
-						&& beta  <  13828 /* VALUE_TB_WIN_IN_MAX_PLY */
-						&& value > -11369 /* VALUE_TB_LOSS_IN_MAX_PLY*/)
+						&& beta  <  13782 /* VALUE_TB_WIN_IN_MAX_PLY */
+						&& value > -11541 /* VALUE_TB_LOSS_IN_MAX_PLY*/)
 						// ⇨　ここのマジックナンバー、何かよくわからん。
 						// もともと、VALUE_TB_WIN_IN_MAX_PLYとVALUE_TB_LOSS_IN_MAX_PLYだったのが、
 						// 以下のcommitでパラメーターtuning対象となったようで…。
