@@ -217,8 +217,8 @@ int Reductions[MAX_MOVES]; // [depth or moveNumber]
 // そのためのフラグ。(これがtrueだとreduction量が1増える)
 Depth reduction(bool i, Depth d, int mn, Value delta, Value rootDelta) {
 	int reductionScale = Reductions[d] * Reductions[mn];
-	return (reductionScale + PARAM_REDUCTION_ALPHA/*1487*/ - int(delta) * PARAM_REDUCTION_GAMMA/*976*/ / int(rootDelta)) / 1024
-		+ (!i && reductionScale > PARAM_REDUCTION_BETA/*808*/ );
+	return (reductionScale + PARAM_REDUCTION_ALPHA/*1346*/ - int(delta) * PARAM_REDUCTION_GAMMA/*896*/ / int(rootDelta)) / 1024
+		+ (!i && reductionScale > PARAM_REDUCTION_BETA/*880*/ );
 	// PARAM_REDUCTION_BETAの値、将棋ではもう少し小さくして、reductionの適用範囲を広げた方がいいかも？
 }
 
@@ -248,7 +248,7 @@ constexpr int futility_move_count(bool improving, int depth) {
 // History and stats update bonus, based on depth
 // depthに基づく、historyとstatsのupdate bonus
 
-int stat_bonus(Depth d) { return std::min(291 * d - 350, 1200); }
+int stat_bonus(Depth d) { return std::min(268 * d - 352, 1153); }
 	// →　やねうら王では、Stockfishの統計値、統計ボーナスに関して手を加えないことにしているので
 	// この値はStockfishの値そのまま。
 
@@ -257,7 +257,7 @@ int stat_bonus(Depth d) { return std::min(291 * d - 350, 1200); }
 // ※ malus(「悪い」、「不利益」みたいな意味)は
 // 「統計的なペナルティ」または「マイナスの修正値」を計算するために使用される。
 // この関数は、ある行動が望ましくない結果をもたらした場合に、その行動の評価を減少させるために使われる
-int stat_malus(Depth d) { return std::min(361 * d - 361, 1182); }
+int stat_malus(Depth d) { return std::min(400 * d - 354, 1201); }
 
 #else
 
@@ -1062,12 +1062,12 @@ void Thread::search()
 			// Stockfish 12.1では16に変更された。
 			// Stockfish 16では10に変更された。
 
-			delta = Value(PARAM_ASPIRATION_SEARCH_DELTA /*10*/) + int(avg) * avg / 15335;
+			delta = Value(PARAM_ASPIRATION_SEARCH_DELTA /*9*/) + int(avg) * avg / 14847;
 			alpha = std::max(avg - delta,-VALUE_INFINITE);
 			beta  = std::min(avg + delta, VALUE_INFINITE);
 
 			// Adjust optimism based on root move's previousScore (~4 Elo)
-            //optimism[us]  = 110 * avg / (std::abs(avg) + 121);
+            //optimism[us]  = 121 * avg / (std::abs(avg) + 109);
             //optimism[~us] = -optimism[us];
 			// → このoptimismは、StockfishのNNUE評価関数で何やら使っているようなのだが…。
 
@@ -2017,7 +2017,7 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
 
 	if (is_ok((ss - 1)->currentMove) && !(ss - 1)->inCheck && !priorCapture)
 	{
-	    int bonus = std::clamp(-14 * int((ss - 1)->staticEval + ss->staticEval), -1449, 1449);
+	    int bonus = std::clamp(-13 * int((ss - 1)->staticEval + ss->staticEval), -1555, 1452);
 		// この右辺の↑係数、調整すべきだろうけども、4 Eloのところ調整しても…みたいな意味はある。
 
 		thisThread->mainHistory(~us, from_to((ss - 1)->currentMove)) << bonus;
@@ -2067,7 +2067,7 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
 	// TODO : ここのパラメーター調整するか考える。
 	// → ~1 Eloだとなー。
 
-	if (eval < alpha - 474 - (270 - 174 * ((ss + 1)->cutoffCnt > 3)) * depth * depth)
+	if (eval < alpha - 472 - (284 - 165 * ((ss + 1)->cutoffCnt > 3)) * depth * depth)
 	{
 		value = qsearch<NonPV>(pos, ss, alpha - 1, alpha);
 		if (value < alpha)
@@ -2094,9 +2094,9 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
 	if (   !ss->ttPv
 		&&  depth < PARAM_FUTILITY_RETURN_DEPTH/*9*/
 		&&  eval - futility_margin(depth, cutNode && !ss->ttHit, improving)
-				- (ss - 1)->statScore / 321 >= beta
+				- (ss - 1)->statScore / 337 >= beta
 		&&  eval >= beta
-		&&  eval < 29462 // smaller than TB wins
+		&&  eval < 29008 // smaller than TB wins
 		&& (!ttMove || ttCapture))
 
 		// 29462の根拠はよくわからないが、VALUE_TB_WIN_IN_MAX_PLY より少し小さい値にしたいようだ。
@@ -2122,10 +2122,10 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
 	//  evalの見積りがbetaを超えているので1手パスしてもbetaは超えそう。
 	if (   !PvNode
 		&& (ss - 1)->currentMove != MOVE_NULL
-		&& (ss - 1)->statScore < 17257
+		&& (ss - 1)->statScore < 17496
 		&&  eval >= beta
 		&&  eval >= ss->staticEval
-		&&  ss->staticEval >= beta - PARAM_NULL_MOVE_MARGIN1 /*24*/ * depth + PARAM_NULL_MOVE_MARGIN2 /*281*/
+		&&  ss->staticEval >= beta - PARAM_NULL_MOVE_MARGIN1 /*23*/ * depth + PARAM_NULL_MOVE_MARGIN2 /*304*/
 		&& !excludedMove
 	//	&&  pos.non_pawn_material(us)  // これ終盤かどうかを意味する。将棋でもこれに相当する条件が必要かも。
 		&&  ss->ply >= thisThread->nmpMinPly
@@ -2162,7 +2162,7 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
 			// 1手パスしてもbetaを上回りそうであることがわかったので
 			// これをもう少しちゃんと検証しなおす。
 
-	        if (thisThread->nmpMinPly || depth < PARAM_NULL_MOVE_RETURN_DEPTH/*14*/)
+	        if (thisThread->nmpMinPly || depth < PARAM_NULL_MOVE_RETURN_DEPTH/*15*/)
 				return nullValue;
 
 			ASSERT_LV3(!thisThread->nmpMinPly); // Recursive verification is not allowed
@@ -2214,7 +2214,7 @@ Value search(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth, boo
 		depth -= 2;
 
 	// probCutに使うbeta値。
-	probCutBeta = beta + PARAM_PROBCUT_MARGIN1/*168*/ - PARAM_PROBCUT_MARGIN2/*70*/ * improving;
+	probCutBeta = beta + PARAM_PROBCUT_MARGIN1/*163*/ - PARAM_PROBCUT_MARGIN2/*67*/ * improving;
 
 	// -----------------------
 	// Step 11. ProbCut (~10 Elo)
@@ -2320,7 +2320,7 @@ moves_loop:
 	// Step 12. A small Probcut idea, when we are in check (~4 Elo)
 	// -----------------------
 
-	probCutBeta = beta + PARAM_PROBCUT_MARGIN3 /*416*/;
+	probCutBeta = beta + PARAM_PROBCUT_MARGIN3 /*425*/;
 	if (   ss->inCheck
 		&& !PvNode
 		&& ttCapture
@@ -2495,7 +2495,7 @@ moves_loop:
 					Piece capturedPiece = pos.piece_on(to_sq(move));
 					// TODO : ここのパラメーター、調整すべきか？ 2 Eloだから無視していいか…。
 					int   futilityEval =
-						ss->staticEval + 239 + 291 * lmrDepth + CapturePieceValuePlusPromote(pos, move)
+						ss->staticEval + 238 + 305 * lmrDepth + CapturePieceValuePlusPromote(pos, move)
 						+ captureHistory(movedPiece, to_sq(move), type_of(capturedPiece)) / 7;
 
 					if (futilityEval < alpha)
@@ -2519,12 +2519,12 @@ moves_loop:
 				// Continuation history based pruning (~2 Elo)
 				// Continuation historyに基づいた枝刈り(historyの値が悪いものに関してはskip)
 
-				if (lmrDepth < PARAM_PRUNING_BY_HISTORY_DEPTH/*6*/ && history < -3645 * depth)
+				if (lmrDepth < PARAM_PRUNING_BY_HISTORY_DEPTH/*6*/ && history < -3752 * depth)
 					continue;
 
 				history += 2 * thisThread->mainHistory(us, from_to(move));
 
-				lmrDepth += history / 7836;
+				lmrDepth += history / 7838;
 				lmrDepth = std::max(lmrDepth, -1);
 
 				// Futility pruning: parent node (~13 Elo)
@@ -2534,9 +2534,9 @@ moves_loop:
 				// 　ここ、そんなに大きなEloを持っていないので、調整しても…。
 
 				if (   !ss->inCheck
-					&& lmrDepth < PARAM_FUTILITY_AT_PARENT_NODE_DEPTH/*13*/
-					&& ss->staticEval + (bestValue < ss->staticEval - 62 ? 123 : 77)
-						+ PARAM_FUTILITY_AT_PARENT_NODE_ALPHA /*127*/ * lmrDepth <= alpha)
+					&& lmrDepth < PARAM_FUTILITY_AT_PARENT_NODE_DEPTH/*14*/
+					&& ss->staticEval + (bestValue < ss->staticEval - 57 ? 124 : 71)
+						+ PARAM_FUTILITY_AT_PARENT_NODE_ALPHA /*118*/ * lmrDepth <= alpha)
 					continue;
 
 				// ※　以下のLMRまわり、棋力に極めて重大な影響があるので枝刈りを入れるかどうかを含めて慎重に調整すべき。
@@ -2598,7 +2598,7 @@ moves_loop:
 			if (!rootNode
 				&&  move == ttMove
 				&& !excludedMove // 再帰的なsingular延長を除外する。
-		        &&  depth >= PARAM_SINGULAR_EXTENSION_DEPTH - (thisThread->completedDepth > 24) + 2 * (PvNode && tte->is_pv())
+		        &&  depth >= PARAM_SINGULAR_EXTENSION_DEPTH - (thisThread->completedDepth > 27) + 2 * (PvNode && tte->is_pv())
 			/*  &&  ttValue != VALUE_NONE Already implicit in the next condition */
 				&&  abs(ttValue) < VALUE_TB_WIN_IN_MAX_PLY // 詰み絡みのスコアはsingular extensionはしない。(Stockfish 10～)
 				&& (tte->bound() & BOUND_LOWER)
@@ -2609,7 +2609,7 @@ moves_loop:
 			{
 				// このmargin値は評価関数の性質に合わせて調整されるべき。
 		        Value singularBeta  = ttValue
-					- (PARAM_SINGULAR_MARGIN1 /*64*/ + PARAM_SINGULAR_MARGIN2/* 57 */ * (ss->ttPv && !PvNode)) * depth / 64;
+					- (PARAM_SINGULAR_MARGIN1 /*66*/ + PARAM_SINGULAR_MARGIN2/* 58 */ * (ss->ttPv && !PvNode)) * depth / 64;
 				Depth singularDepth = newDepth / 2;
 
 				// move(ttMove)の指し手を以下のsearch()での探索から除外
@@ -2634,7 +2634,7 @@ moves_loop:
 					// TODO : ここのパラメーター、調整すべきかも？
 
 					if (  !PvNode
-						&& value < singularBeta - 18
+						&& value < singularBeta - 17
 						&& ss->doubleExtensions <= 11)
 					{
 						extension = 2;
@@ -2709,7 +2709,7 @@ moves_loop:
 			//  それでもまだやりすぎの感はある。やねうら王では、延長の条件をさらに絞る。
 
 			else if (givesCheck
-				&& depth > 9
+				&& depth > 10
 				// !!重要!!
 				// この条件、やねうら王では独自に追加している。
 				// →　王手延長は、開き王手と駒損しない王手に限定する。
@@ -2726,13 +2726,13 @@ moves_loop:
 			else if (PvNode
 				&& move == ttMove
 				&& move == ss->killers[0]
-				&& (*contHist[0])(movedPiece, to_sq(move)) >= 4194)
+				&& (*contHist[0])(movedPiece, to_sq(move)) >= 4325)
 				extension = 1;
 
             // Recapture extensions (~1 Elo)
             else if (PvNode && move == ttMove && to_sq(move) == prevSq
                      && captureHistory(movedPiece, to_sq(move), type_of(pos.piece_on(to_sq(move))))
-                          > 4000)
+                          > 4146)
                 extension = 1;
 		}
 
@@ -2850,10 +2850,10 @@ moves_loop:
 						+     (*contHist[0])(movedPiece, to_sq(move))
 						+     (*contHist[1])(movedPiece, to_sq(move))
 						+     (*contHist[3])(movedPiece, to_sq(move))
-						- 3848;
+						- 3817;
 			
 		// Decrease/increase reduction for moves with a good/bad history (~25 Elo)
-		r -= ss->statScore / (10216 + 3855 * (depth > 5 && depth < 23));
+		r -= ss->statScore / 14767;
 
 		// -----------------------
 		// Step 17. Late moves reduction / extension (LMR, ~117 Elo)
@@ -2905,7 +2905,7 @@ moves_loop:
 				// Adjust full-depth search based on LMR results - if the result
 				// was good enough search deeper, if it was bad enough search shallower
 
-				const bool doDeeperSearch     = value > (bestValue + 50 + 2 * newDepth); // (~1 Elo)
+				const bool doDeeperSearch     = value > (bestValue + 53 + 2 * newDepth); // (~1 Elo)
 				const bool doShallowerSearch  = value <  bestValue + newDepth;           // (~2 Elo)
 
 				newDepth += doDeeperSearch - doShallowerSearch;
@@ -3096,8 +3096,8 @@ moves_loop:
 
 					if (   depth > 2
 						&& depth < 12
-						&& beta  <  13828 /* VALUE_TB_WIN_IN_MAX_PLY */
-						&& value > -11369 /* VALUE_TB_LOSS_IN_MAX_PLY*/)
+						&& beta  <  13782 /* VALUE_TB_WIN_IN_MAX_PLY */
+						&& value > -11541 /* VALUE_TB_LOSS_IN_MAX_PLY*/)
 						// ⇨　ここのマジックナンバー、何かよくわからん。
 						// もともと、VALUE_TB_WIN_IN_MAX_PLYとVALUE_TB_LOSS_IN_MAX_PLYだったのが、
 						// 以下のcommitでパラメーターtuning対象となったようで…。
@@ -3192,7 +3192,7 @@ moves_loop:
 
 	else if (!priorCapture && prevSq != SQ_NONE)
 	{
-		int bonus = (depth > 6) + (PvNode || cutNode) + (bestValue < alpha - PARAM_COUNTERMOVE_FAILLOW_MARGIN /*657*/)
+		int bonus = (depth > 6) + (PvNode || cutNode) + (bestValue < alpha - PARAM_COUNTERMOVE_FAILLOW_MARGIN /*656*/)
 				    + ((ss - 1)->moveCount > 10);
 		update_continuation_histories(ss - 1, pos.piece_on(prevSq), prevSq,
 										stat_bonus(depth) * bonus);
@@ -3595,7 +3595,7 @@ Value qsearch(Position& pos, Stack* ss, Value alpha, Value beta, Depth depth)
 
 		// futilityの基準となる値をbestValueにmargin値を加算したものとして、
 		// これを下回るようであれば枝刈りする。
-		futilityBase = ss->staticEval + PARAM_FUTILITY_MARGIN_QUIET /*200*/;
+		futilityBase = ss->staticEval + PARAM_FUTILITY_MARGIN_QUIET /*182*/;
 
 	}
 
@@ -3975,7 +3975,7 @@ void update_all_stats(const Position& pos, Stack* ss, Move bestMove, Value bestV
 		// PARAM_UPDATE_ALL_STATS_EVAL_TH は、PawnValueより少し小さな値がベストっぽい。
 		// ※ StockfishではPawnValueが210ぐらいなので、それを考慮すること。
 
-		int bestMoveBonus = bestValue > beta + PARAM_UPDATE_ALL_STATS_EVAL_TH /*168*/ ? quietMoveBonus		// larger bonus
+		int bestMoveBonus = bestValue > beta + PARAM_UPDATE_ALL_STATS_EVAL_TH /*173*/ ? quietMoveBonus		// larger bonus
 															                          : stat_bonus(depth);	// smaller bonus
 
 		// Increase stats for the best move in case it was a quiet move
