@@ -2358,20 +2358,6 @@ moves_loop:
 
 	moveCountPruning = singularQuietLMR = false;
 
-	// Indicate PvNodes that will probably fail low if the node was searched
-	// at a depth equal to or greater than the current depth, and the result
-	// of this search was a fail low.
-
-	// 現在の深さと同じかそれ以上の深さでノードが探索され、
-	// その探索の結果がfail lowだった場合、おそらくfail lowになるであろうPvNodesを示す。
-
-	// ノードが現在のdepth以上で探索され、fail lowである時に、PvNodeがfail lowしそうであるかを示すフラグ。
-	bool likelyFailLow =    PvNode
-						&&  ttMove
-						&& (tte->bound() & BOUND_UPPER)
-						&&  tte->depth() >= depth;
-
-
 	// -----------------------
 	// Step 13. Loop through all pseudo-legal moves until no moves remain
 	//			or a beta cutoff occurs.
@@ -2778,9 +2764,8 @@ moves_loop:
 		// Decrease further on cutNodes. (~1 Elo)
 		// この局面がPV上にあり、fail lowしそうであるならreductionを減らす
 		// (fail lowしてしまうとまた探索をやりなおさないといけないので)
-		if (   ss->ttPv
-			&& !likelyFailLow)
-			r -= cutNode && tte->depth() >= depth ? 3 : 2;
+		if (ss->ttPv)
+			r -= 1 + (ttValue > alpha) + (ttValue > beta && tte->depth() >= depth);
 
 		// 【計測資料 4.】相手のmoveCountが高いときにreductionを減らす
 		// →　古い計測なので当時はこのコードないほうが良かったが、Stockfish10では入れたほうが良さげ。
@@ -2800,7 +2785,7 @@ moves_loop:
 		// 【計測資料 18.】cut nodeのときにreductionを増やすかどうか。
 
 		if (cutNode)
-			r += 2;
+			r += 2 - (tte->depth() >= depth && ss->ttPv);
 
 		// Increase reduction if ttMove is a capture (~3 Elo)
 		// 【計測資料 3.】置換表の指し手がcaptureのときにreduction量を増やす。
@@ -2811,7 +2796,7 @@ moves_loop:
 		// Decrease reduction for PvNodes (~2 Elo)
 		// PvNodeではreductionを減らす。
 
-		if (PvNode)
+		if (PvNode && tte->bound() != BOUND_UPPER)
 			r--;
 
 		// Decrease reduction if ttMove has been singularly extended (~1 Elo)
