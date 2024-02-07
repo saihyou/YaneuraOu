@@ -1227,8 +1227,15 @@ void Position::do_move_impl(Move m, StateInfo& new_st, bool givesCheck)
 	st->sum.p[0][0] = VALUE_NOT_EVALUATED;
 #endif
 #if defined(EVAL_NNUE)
+#if defined(USE_DUAL_NET)
+	st->accumulatorSmall.computed_accumulation = false;
+	st->accumulatorSmall.computed_score = false;
+	st->accumulatorBig.computed_accumulation = false;
+	st->accumulatorBig.computed_score = false;
+#else
 	st->accumulator.computed_accumulation = false;
 	st->accumulator.computed_score = false;
+#endif
 #endif
 
 #if defined(USE_BOARD_EFFECT_PREV)
@@ -1883,7 +1890,12 @@ void Position::do_null_move(StateInfo& newSt) {
 
 #if defined(EVAL_NNUE)
 	// NNUEの場合、KPPT型と違って、手番が違う場合、計算なしに済ますわけにはいかない。
+#if defined(USE_DUAL_NET)
+	st->accumulatorSmall.computed_score = false;
+	st->accumulatorBig.computed_score = false;
+#else
 	st->accumulator.computed_score = false;
+#endif
 #endif
 
 	st->board_key_ ^= Zobrist::side;

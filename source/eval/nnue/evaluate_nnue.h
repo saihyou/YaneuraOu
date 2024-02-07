@@ -28,8 +28,16 @@ namespace Eval::NNUE {
 
 	// Hash value of evaluation function structure
 	// 評価関数の構造のハッシュ値
+#if defined(USE_DUAL_NET)
+	constexpr std::uint32_t kHashValue[2] = {
+  FeatureTransformer<TransformedFeatureDimensionsBig, nullptr>::GetHashValue()
+    ^ Network<TransformedFeatureDimensionsBig, L2Big, L3Big>::GetHashValue(),
+  FeatureTransformer<TransformedFeatureDimensionsSmall, nullptr>::GetHashValue()
+    ^ Network<TransformedFeatureDimensionsSmall, L2Small, L3Small>::GetHashValue()};
+#else
 	constexpr std::uint32_t kHashValue =
 	    FeatureTransformer::GetHashValue() ^ Network::GetHashValue();
+#endif
 
 	// Deleter for automating release of memory area
 	// メモリ領域の解放を自動化するためのデリータ
@@ -49,7 +57,7 @@ namespace Eval::NNUE {
 
 	template <typename T>
 	using AlignedPtr = std::unique_ptr<T, LargeMemoryDeleter<T>>;
-
+#if !defined(USE_DUAL_NET)
 	// 入力特徴量変換器
 	extern AlignedPtr<FeatureTransformer> feature_transformer;
 
@@ -58,7 +66,7 @@ namespace Eval::NNUE {
 
 	// 評価関数ファイル名
 	extern const char* const kFileName;
-
+#endif
 	// 評価関数の構造を表す文字列を取得する
 	std::string GetArchitectureString();
 

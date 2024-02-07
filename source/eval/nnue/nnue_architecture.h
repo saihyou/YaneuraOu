@@ -48,6 +48,9 @@
 #elif defined(EVAL_NNUE_HALFKA_1024_8_32)
 #include "architectures/halfka_1024-8-32.h"
 
+#elif defined(EVAL_NNUE_DUAL_NET)
+#include "architectures/dual_net.h"
+
 #else
 
 // どれも定義されていなかったので標準NNUE型にしておく。
@@ -56,11 +59,11 @@
 #endif
 
 namespace Eval::NNUE {
-
+#if !defined(USE_DUAL_NET)
 	static_assert(kTransformedFeatureDimensions % kMaxSimdWidth == 0, "");
 	static_assert(Network::kOutputDimensions == 1, "");
 	static_assert(std::is_same<Network::OutputType, std::int32_t>::value, "");
-
+#endif
 	// Trigger for full calculation instead of difference calculation
 	// 差分計算の代わりに全計算を行うタイミングのリスト
 	constexpr auto kRefreshTriggers = RawFeatures::kRefreshTriggers;

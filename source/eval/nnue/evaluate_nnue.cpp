@@ -22,7 +22,15 @@ namespace Eval {
     namespace NNUE {
 
 		int FV_SCALE = 16; // 水匠5では24がベストらしいのでエンジンオプション"FV_SCALE"で変更可能にした。
-
+#if defined(USE_DUAL_NET)
+        constexpr int kEvalThreshold = 1050;
+        AlignedPtr<FeatureTransformer<TransformedFeatureDimensionsSmall, &StateInfo::accumulatorSmall>> feature_transformer_small;
+        AlignedPtr<FeatureTransformer<TransformedFeatureDimensionsBig, &StateInfo::accumulatorBig>> feature_transformer_big;
+        AlignedPtr<Network<TransformedFeatureDimensionsSmall, L2Small, L3Small>> network_small;
+        AlignedPtr<Network<TransformedFeatureDimensionsBig, L2Big, L3Big>> network_big;
+        const char* const kFileNameBig = "nn_big.bin";
+        const char* const kFileNameSmall = "nn_small.bin";
+#else
         // 入力特徴量変換器
         AlignedPtr<FeatureTransformer> feature_transformer;
 
@@ -37,7 +45,7 @@ namespace Eval {
             return "Features=" + FeatureTransformer::GetStructureString() +
                 ",Network=" + Network::GetStructureString();
         }
-
+#endif
         namespace {
 
             namespace Detail {
@@ -74,8 +82,15 @@ namespace Eval {
 
             // 評価関数パラメータを初期化する
             void Initialize() {
+#if defined(USE_DUAL_NET)
+                Detail::Initialize(feature_transformer_small);
+                Detail::Initialize(feature_transformer_big);
+                Detail::Initialize(network_small);
+                Detail::Initialize(network_big);
+#else
                 Detail::Initialize(feature_transformer);
                 Detail::Initialize(network);
+#endif
             }
 
         }  // namespace
@@ -105,36 +120,98 @@ namespace Eval {
         }
 
         // 評価関数パラメータを読み込む
+#if defined(USE_DUAL_NET)
+        bool ReadParameters(std::istream& stream, NetSize net_size) {
+#else
         bool ReadParameters(std::istream& stream) {
+#endif
             std::uint32_t hash_value;
             std::string architecture;
             if (!ReadHeader(stream, &hash_value, &architecture)) return false;
+#if defined(USE_DUAL_NET)
+            if (hash_value != kHashValue[net_size]) return false;
+            if (net_size == NetSize::Big && !Detail::ReadParameters(stream, feature_transformer_big)) return false;
+            if (net_size == NetSize::Small && !Detail::ReadParameters(stream, feature_transformer_small)) return false;
+            if (net_size == NetSize::Big && !Detail::ReadParameters(stream, network_big)) return false;
+            if (net_size == NetSize::Small && !Detail::ReadParameters(stream, network_small)) return false;
+#else
             if (hash_value != kHashValue) return false;
             if (!Detail::ReadParameters(stream, feature_transformer)) return false;
             if (!Detail::ReadParameters(stream, network)) return false;
+#endif
             return stream && stream.peek() == std::ios::traits_type::eof();
         }
 
         // 評価関数パラメータを書き込む
+#if defined(USE_DUAL_NET)
+        bool WriteParameters(std::ostream& stream, NetSize net_size) {
+#else
         bool WriteParameters(std::ostream& stream) {
+#endif
+
+#if defined(USE_DUAL_NET)
+            if (!WriteHeader(stream, kHashValue[net_size], GetArchitectureString())) return false;
+            if (net_size == NetSize::Big && !Detail::WriteParameters(stream, feature_transformer_big)) return false;
+            if (net_size == NetSize::Small && !Detail::WriteParameters(stream, feature_transformer_small)) return false;
+            if (net_size == NetSize::Big && !Detail::WriteParameters(stream, network_big)) return false;
+            if (net_size == NetSize::Small && !Detail::WriteParameters(stream, network_small)) return false;
+#else
             if (!WriteHeader(stream, kHashValue, GetArchitectureString())) return false;
             if (!Detail::WriteParameters(stream, feature_transformer)) return false;
             if (!Detail::WriteParameters(stream, network)) return false;
+#endif
             return !stream.fail();
         }
 
         // 差分計算ができるなら進める
         static void UpdateAccumulatorIfPossible(const Position& pos) {
+#if defined(USE_DUAL_NET)
+            if (abs(static_cast<int>(pos.state()->materialValue)) > kEvalThreshold) {
+                feature_transformer_small->UpdateAccumulatorIfPossible(pos);
+            } else {
+                feature_transformer_big->UpdateAccumulatorIfPossible(pos);
+            }
+#else
             feature_transformer->UpdateAccumulatorIfPossible(pos);
+#endif
         }
 
         // 評価値を計算する
+#if defined(USE_DUAL_NET)
+        template<NetSize Net_Size>
+#endif
         static Value ComputeScore(const Position& pos, bool refresh = false) {
+#if defined(USE_DUAL_NET)
+            if (Net_Size == NetSize::Big) {
+                auto& accumulator = pos.state()->accumulatorBig;
+                if (!refresh && accumulator.computed_score) {
+                    return accumulator.score;
+                }
+            } else {
+                auto& accumulator = pos.state()->accumulatorSmall;
+                if (!refresh && accumulator.computed_score) {
+                    return accumulator.score;
+                }
+            }
+#else
             auto& accumulator = pos.state()->accumulator;
             if (!refresh && accumulator.computed_score) {
                 return accumulator.score;
             }
-
+#endif
+#if defined(USE_DUAL_NET)
+            alignas(kCacheLineSize) TransformedFeatureType
+                transformed_features[FeatureTransformer < Net_Size == Small ? TransformedFeatureDimensionsSmall
+                                                                 : TransformedFeatureDimensionsBig,
+                          nullptr > ::kBufferSize];
+            if (Net_Size == NetSize::Big) {
+                feature_transformer_big->Transform(pos, transformed_features, refresh);
+            } else {
+                feature_transformer_small->Transform(pos, transformed_features, refresh);
+            }
+            const auto output = (Net_Size == NetSize::Big) ? network_big->Propagate(transformed_features)
+                : network_small->Propagate(transformed_features);
+#else
             alignas(kCacheLineSize) TransformedFeatureType
                 transformed_features[FeatureTransformer::kBufferSize];
             feature_transformer->Transform(pos, transformed_features, refresh);
@@ -144,7 +221,7 @@ namespace Eval {
             alignas(kCacheLineSize) char buffer[Network::kBufferSize];
             const auto output = network->Propagate(transformed_features, buffer);
 #endif
-
+#endif
             // VALUE_MAX_EVALより大きな値が返ってくるとaspiration searchがfail highして
             // 探索が終わらなくなるのでVALUE_MAX_EVAL以下であることを保証すべき。
 
@@ -165,10 +242,23 @@ namespace Eval {
             // 1) ここ、下手にclipすると学習時には影響があるような気もするが…。
             // 2) accumulator.scoreは、差分計算の時に用いないので書き換えて問題ない。
             score = Math::clamp(score, -VALUE_MAX_EVAL, VALUE_MAX_EVAL);
-
+#if defined(USE_DUAL_NET)
+            if (Net_Size == NetSize::Big) {
+                auto& accumulator = pos.state()->accumulatorBig;
+                accumulator.score = score;
+                accumulator.computed_score = true;
+                return accumulator.score;
+            } else {
+                auto& accumulator = pos.state()->accumulatorSmall;
+                accumulator.score = score;
+                accumulator.computed_score = true;
+                return accumulator.score;
+            }
+#else
             accumulator.score = score;
             accumulator.computed_score = true;
             return accumulator.score;
+#endif
         }
 
     }  // namespace NNUE
@@ -238,7 +328,7 @@ namespace Eval {
 #endif
         {
             const std::string dir_name = Options["EvalDir"];
-#if !defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) && !defined(USE_DUAL_NET)
 			const std::string file_name = NNUE::kFileName;
 #else
 			// WASM
@@ -248,14 +338,27 @@ namespace Eval {
                 if (dir_name != "<internal>") {
                     auto full_dir_name = Path::Combine(Directory::GetCurrentFolder(), dir_name);
                     sync_cout << "info string EvalDirectory = " << full_dir_name << sync_endl;
-
+#if defined(USE_DUAL_NET)
+                    const std::string file_path_big = Path::Combine(dir_name, NNUE::kFileNameBig);
+                    std::ifstream stream_big(file_path_big, std::ios::binary);
+                    sync_cout << "info string loading eval file : " << file_path_big << sync_endl;
+                    if (!NNUE::ReadParameters(stream_big, NNUE::NetSize::Big)) {
+                        return false;
+                    }
+                    const std::string file_path_small = Path::Combine(dir_name, NNUE::kFileNameSmall);
+                    std::ifstream stream_small(file_path_small, std::ios::binary);
+                    sync_cout << "info string loading eval file : " << file_path_small << sync_endl;
+                    return NNUE::ReadParameters(stream_small, NNUE::NetSize::Small);
+#else
                     const std::string file_path = Path::Combine(dir_name, file_name);
                     std::ifstream stream(file_path, std::ios::binary);
                     sync_cout << "info string loading eval file : " << file_path << sync_endl;
 
                     return NNUE::ReadParameters(stream);
+#endif
                 }
                 else {
+#if !defined(USE_DUAL_NET)
                     // C++ way to prepare a buffer for a memory stream
                     class MemoryBuffer : public std::basic_streambuf<char> {
                         public: MemoryBuffer(char* p, size_t n) {
@@ -271,6 +374,9 @@ namespace Eval {
                     sync_cout << "info string loading eval file : <internal>" << sync_endl;
 
                     return NNUE::ReadParameters(stream);
+#else
+                    return false;
+#endif
                 }
             }();
 
@@ -293,15 +399,37 @@ namespace Eval {
     // 手番側から見た評価値を返すので注意。(他の評価関数とは設計がこの点において異なる)
     // なので、この関数の最適化は頑張らない。
     Value compute_eval(const Position& pos) {
+#if defined(USE_DUAL_NET)
+        if (abs(static_cast<int>(pos.state()->materialValue)) > Eval::NNUE::kEvalThreshold) {
+            return NNUE::ComputeScore<Eval::NNUE::NetSize::Small>(pos, true);
+        } else {
+            return NNUE::ComputeScore<Eval::NNUE::NetSize::Big>(pos, true);
+        }
+#else
         return NNUE::ComputeScore(pos, true);
+#endif
     }
 
     // 評価関数
     Value evaluate(const Position& pos) {
+#if defined(USE_DUAL_NET)
+        if (abs(static_cast<int>(pos.state()->materialValue)) > Eval::NNUE::kEvalThreshold) {
+            const auto& accumulator = pos.state()->accumulatorSmall;
+            if (accumulator.computed_score) {
+                return accumulator.score;
+            }
+        } else {
+            const auto& accumulator = pos.state()->accumulatorBig;
+            if (accumulator.computed_score) {
+                return accumulator.score;
+            }
+        }
+#else
         const auto& accumulator = pos.state()->accumulator;
         if (accumulator.computed_score) {
             return accumulator.score;
         }
+#endif
 
 #if defined(USE_GLOBAL_OPTIONS)
         // GlobalOptionsでeval hashを用いない設定になっているなら
@@ -322,8 +450,13 @@ namespace Eval {
             return Value(entry.score);
         }
 #endif
-
+#if defined(USE_DUAL_NET)
+        Value score = (abs(static_cast<int>(pos.state()->materialValue)) > Eval::NNUE::kEvalThreshold) ?
+            NNUE::ComputeScore<Eval::NNUE::NetSize::Small>(pos) :
+            NNUE::ComputeScore<Eval::NNUE::NetSize::Big>(pos);
+#else
         Value score = NNUE::ComputeScore(pos);
+#endif
 #if defined(USE_EVAL_HASH)
         // せっかく計算したのでevaluate hash tableに保存しておく。
         entry.key = key;

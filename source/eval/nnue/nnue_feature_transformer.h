@@ -169,10 +169,6 @@ static constexpr int BestRegisterCount() {
     return 1;
 }
 
-static constexpr int NumRegs =
-  BestRegisterCount<vec_t, WeightType, kTransformedFeatureDimensions, NumRegistersSIMD>();
-//static constexpr int NumPsqtRegs =
-//  BestRegisterCount<psqt_vec_t, PSQTWeightType, PSQTBuckets, NumRegistersSIMD>();
     #if defined(__GNUC__)
         #pragma GCC diagnostic pop
     #endif
@@ -180,6 +176,10 @@ static constexpr int NumRegs =
 
 // Input feature converter
 // 入力特徴量変換器
+#if defined(USE_DUAL_NET)
+template<IndexType                                 kTransformedFeatureDimensions,
+         Accumulator<kTransformedFeatureDimensions> StateInfo::*accPtr>
+#endif
 class FeatureTransformer {
    private:
 	// Number of output dimensions for one side
@@ -187,6 +187,8 @@ class FeatureTransformer {
 	static constexpr IndexType kHalfDimensions = kTransformedFeatureDimensions;
 
 #if defined(VECTOR)
+	static constexpr int NumRegs =
+  		BestRegisterCount<vec_t, WeightType, kTransformedFeatureDimensions, NumRegistersSIMD>();
 	static constexpr IndexType kTileHeight = NumRegs * sizeof(vec_t) / 2;
 	static_assert(kHalfDimensions % kTileHeight == 0, "kTileHeight must divide kHalfDimensions");
 #endif
@@ -244,6 +246,16 @@ class FeatureTransformer {
 	// 可能なら差分計算を進める
 	bool UpdateAccumulatorIfPossible(const Position& pos) const {
 		const auto now = pos.state();
+#if defined(USE_DUAL_NET)
+		if ((now->*accPtr).computed_accumulation) {
+			return true;
+		}
+		const auto prev = now->previous;
+		if (prev && (prev->*accPtr).computed_accumulation) {
+			update_accumulator(pos);
+			return true;
+		}
+#else
 		if (now->accumulator.computed_accumulation) {
 			return true;
 		}
@@ -252,6 +264,7 @@ class FeatureTransformer {
 			update_accumulator(pos);
 			return true;
 		}
+#endif
 		return false;
 	}
 
@@ -261,7 +274,11 @@ class FeatureTransformer {
 		if (refresh || !UpdateAccumulatorIfPossible(pos)) {
 			refresh_accumulator(pos);
 		}
+#if defined(USE_DUAL_NET)
+		const auto& accumulation = (pos.state()->*accPtr).accumulation;
+#else
 		const auto& accumulation = pos.state()->accumulator.accumulation;
+#endif
 
 #if defined(USE_ELEMENT_WISE_MULTIPLY)
 		const Color perspectives[2] = {pos.side_to_move(), ~pos.side_to_move()};
@@ -434,7 +451,11 @@ class FeatureTransformer {
 	// Calculate cumulative value without using difference calculation
 	// 差分計算を用いずに累積値を計算する
 	void refresh_accumulator(const Position& pos) const {
+#if defined(USE_DUAL_NET)
+		auto& accumulator = pos.state()->*accPtr;
+#else
 		auto& accumulator = pos.state()->accumulator;
+#endif
 		for (IndexType i = 0; i < kRefreshTriggers.size(); ++i) {
 			Features::IndexList active_indices[2];
 			RawFeatures::AppendActiveIndices(pos, kRefreshTriggers[i], active_indices);
@@ -479,8 +500,13 @@ class FeatureTransformer {
 	// Calculate cumulative value using difference calculation
 	// 差分計算を用いて累積値を計算する
 	void update_accumulator(const Position& pos) const {
+#if defined(USE_DUAL_NET)
+		const auto prev_accumulator = pos.state()->previous->*accPtr;
+		auto&      accumulator      = pos.state()->*accPtr;
+#else
 		const auto prev_accumulator = pos.state()->previous->accumulator;
 		auto&      accumulator      = pos.state()->accumulator;
+#endif
 		for (IndexType i = 0; i < kRefreshTriggers.size(); ++i) {
 			Features::IndexList removed_indices[2], added_indices[2];
 			bool                reset[2];

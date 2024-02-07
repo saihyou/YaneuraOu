@@ -142,7 +142,12 @@ struct StateInfo {
 #endif
 
 #if defined(EVAL_NNUE)
+#if defined(USE_DUAL_NET)
+	Eval::NNUE::Accumulator<Eval::NNUE::TransformedFeatureDimensionsBig> accumulatorBig;
+	Eval::NNUE::Accumulator<Eval::NNUE::TransformedFeatureDimensionsSmall> accumulatorSmall;
+#else
 	Eval::NNUE::Accumulator accumulator;
+#endif
 #endif
 
 #if defined (USE_EVAL_LIST)
