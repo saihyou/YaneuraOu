@@ -92,7 +92,7 @@ COMPILER = clang++
 
 # エンジンの表示名 (engine displayname)
 # ("usi"コマンドに対して出力される)
-#ENGINE_NAME =
+ENGINE_NAME = "hisui based on YaneuraOu"
 
 
 # developing branch // 現状、非公開 (currently private)

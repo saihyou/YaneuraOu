@@ -71,7 +71,7 @@ namespace USI {
 		// Stockfishもこうすべきだと思う。
 
 #if !defined(__EMSCRIPTEN__)
-		o["Threads"] << Option(4, 1, 1024, [](const Option& o) { /* on_threads(o); */ });
+		o["Threads"] << Option(24, 1, 1024, [](const Option& o) { /* on_threads(o); */ });
 #else
 		// yaneuraou.wasm
 		// スレッド数などの調整
@@ -82,7 +82,7 @@ namespace USI {
 
 #if !defined(TANUKI_MATE_ENGINE) && !defined(YANEURAOU_MATE_ENGINE)
 		// 置換表のサイズ。[MB]で指定。
-		o["USI_Hash"] << Option(1024, 1, MaxHashMB, [](const Option& o) { /* on_hash_size(o); */ });
+		o["USI_Hash"] << Option(98304, 1, MaxHashMB, [](const Option& o) { /* on_hash_size(o); */ });
 
 #if defined(USE_EVAL_HASH)
 		// 評価値用のcacheサイズ。[MB]で指定。
@@ -99,7 +99,7 @@ namespace USI {
 	    //o["Clear Hash"]            << Option(on_clear_hash);
 
 		// ponderの有無
-		o["USI_Ponder"] << Option(false);
+		o["USI_Ponder"] << Option(true);
 
 		// 確率的ponder , defaultでfalseにしとかないと、読み筋の表示がおかしくなって、初心者混乱する。
 		o["Stochastic_Ponder"] << USI::Option(false);
@@ -132,10 +132,10 @@ namespace USI {
 		// 切れ負けのときの思考時間を調整する。序盤重視率。百分率になっている。
 		// 例えば200を指定すると本来の最適時間の200%(2倍)思考するようになる。
 		// 対人のときに短めに設定して強制的に早指しにすることが出来る。
-		o["SlowMover"] << Option(100, 1, 1000);
+		o["SlowMover"] << Option(120, 1, 1000);
 
 		// 引き分けまでの最大手数。256手ルールのときに256を設定すると良い。0なら無制限。
-		o["MaxMovesToDraw"] << Option(0, 0, 100000);
+		o["MaxMovesToDraw"] << Option(512, 0, 100000);
 
 		// 探索深さ制限。0なら無制限。
 		o["DepthLimit"] << Option(0, 0, int_max);

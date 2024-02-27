@@ -993,7 +993,7 @@ namespace Book
 		o["NarrowBook"] << Option(false);
 
 		// 定跡の指し手を何手目まで用いるか
-		o["BookMoves"] << Option(16, 0, 10000);
+		o["BookMoves"] << Option(256, 0, 10000);
 
 		// 一定の確率で定跡を無視して自力で思考させる
 		o["BookIgnoreRate"] << Option(0, 0, 100);
@@ -1052,10 +1052,10 @@ namespace Book
 		// 定跡データベース上のply(開始局面からの手数)を無視するオプション。
 		// 例) 局面図が同じなら、DBの36手目の局面に40手目でもヒットする。
 		// これ変更したときに定跡ファイルの読み直しが必要になるのだが…(´ω｀)
-		o["IgnoreBookPly"] << Option(false);
+		o["IgnoreBookPly"] << Option(true);
 
 		// 反転させた局面が定跡DBに登録されていたら、それにヒットするようになるオプション。
-		o["FlippedBook"] << Option(true);
+		o["FlippedBook"] << Option(false);
 	}
 
 	// 与えられたmで進めて定跡のpv文字列を生成する。
