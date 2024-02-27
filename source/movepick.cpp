@@ -320,9 +320,8 @@ void MovePicker::score() {
 			// → しかしこのあとsee_ge()の引数に使うのだが、see_ge()ではpromotionの価値を考慮してないので、
 			//    ここでpromotionの価値まで足し込んでしまうとそこと整合性がとれなくなるのか…。
 
-			m.value = (7 * int(Eval::CapturePieceValuePlusPromote(pos, m))
-					   + (*captureHistory)(pos.moved_piece_after(m), to_sq(m), type_of(pos.piece_on(to_sq(m)))))
-					  / 16;
+			m.value = 7 * int(Eval::CapturePieceValuePlusPromote(pos, m))
+					   + (*captureHistory)(pos.moved_piece_after(m), to_sq(m), type_of(pos.piece_on(to_sq(m))));
 			// →　係数を掛けたり全体を16で割ったりしているのは、
 			// このあと、GOOD_CAPTURE で、
 			//	return pos.see_ge(*cur, Value(-cur->value))
@@ -507,9 +506,9 @@ top:
 				// 損をする(SEE値が悪い)captureの指し手はあとで試すためにendBadCapturesに移動させる
 
 				// moveは駒打ちではないからsee()の内部での駒打ちは判定不要だが…。
-                return pos.see_ge(*cur, Value(-cur->value)) ?
-						// 損をする捕獲する指し手はあとのほうで試行されるようにendBadCapturesに移動させる
-						true : (*endBadCaptures++ = *cur, false);
+                return pos.see_ge(*cur, Value(-cur->value / 18)) ? true
+																 : (*endBadCaptures++ = *cur, false);
+				// 損をする捕獲する指し手はあとのほうで試行されるようにendBadCapturesに移動させる
 			}))
 			return *(cur -1);
 
@@ -608,9 +607,9 @@ top:
 
 #if defined(USE_SUPER_SORT) && defined(USE_AVX2)
 			// SuperSortを有効にするとinsertion_sortと結果が異なるのでbenchコマンドの探索node数が変わって困ることがあるので注意。
-			partial_super_sort    (cur, endMoves, - PARAM_MOVEPICKER_SORT_TH1 /*1960*/ - PARAM_MOVEPICKER_SORT_ALPHA1 /*3130*/ * depth);
+			partial_super_sort    (cur, endMoves, - PARAM_MOVEPICKER_SORT_ALPHA1 /*3500*/ * depth);
 #else
-			partial_insertion_sort(cur, endMoves, - PARAM_MOVEPICKER_SORT_TH2 /*1960*/ - PARAM_MOVEPICKER_SORT_ALPHA2 /*3130*/ * depth);
+			partial_insertion_sort(cur, endMoves, - PARAM_MOVEPICKER_SORT_ALPHA2 /*3330*/ * depth);
 #endif
 
 			// →　sort時間がもったいないのでdepthが浅いときはscoreの悪い指し手を無視するようにしているだけで
