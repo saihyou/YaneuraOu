@@ -3,6 +3,7 @@
 #if defined(YANEURAOU_ENGINE_DEEP)
 
 #include <sstream> // stringstream
+#include <cstring> // memcpy
 
 #include "dlshogi_types.h"
 #include "UctSearch.h"
@@ -572,9 +573,38 @@ namespace dlshogi
 		}
 	}
 
+	// posからply先のpvのhash keyを返す。
+	// ply = 残り手数(3を設定すると現局面と合わせて4手分をkeysに出力)
+	// keys には keys[0]がply手後、keys[1]がply-1手後 .. keys[ply-1]に0手後のhash keyが返る。
+	void pv_key(Position& pos, Node* node, int ply, Key64 keys[])
+	{
+		if (ply == 0)
+			keys[ply] = pos.hash_key();
+		else if (node == nullptr || node->child_num == 0)
+			keys[ply] = 0;
+		else
+		{
+			if (node->child_nodes.get() == nullptr)
+				return ;
+			// child nodesが展開されていない。
+
+			ChildNumType max_i = 0;
+			for(ChildNumType i = 1 ; i < node->child_num; ++i)
+				if (node->child[i].move_count > node->child[max_i].move_count)
+					max_i = i;
+
+			StateInfo si;
+			Move m = node->child[max_i].move;
+			//sync_cout << to_usi_string(m) << sync_endl;
+			pos.do_move(m, si);
+			pv_key(pos, node->child_nodes[max_i].get(), ply - 1, keys);
+			pos.undo_move(m);
+		}
+	}
+
 	//  探索停止の確認
 	// SearchInterruptionCheckerから呼び出される。
-	void DlshogiSearcher::InterruptionCheck()
+	void DlshogiSearcher::InterruptionCheck(const Position& rootPos)
 	{
 		auto& s = search_limits;
 		auto& o = search_options;
@@ -614,16 +644,6 @@ namespace dlshogi
 			// 時間制御不要なのでノード数を超えていなくともここでリターンする。
 			return;
 		}
-
-#if defined(USE_FAST_ALLOC)
-		// 10MB切ってたら即座に停止する。
-		if (FAST_ALLOC.rest() < 10 * 1024*1024 )
-		{
-			sync_cout << "info string Error! No memory .. stop thinking. " << sync_endl;
-			interrupt();
-			return ;
-		}
-#endif
 
 		// hashfull
 		// s.current_root->move_count == NOT_EXPANDED  開始まもなくはこれでありうるので、
@@ -682,147 +702,248 @@ namespace dlshogi
 			}
 		}
 
+		// 残り最適時間。残り最大時間。
+		// このInterruptionCheck関数を呼び出す間隔(kCheckIntervalMs)を差し引いて考える必要がある。
+		auto mimimum = std::max(s.time_manager.minimum() - SearchInterruptionChecker::kCheckIntervalMs , s64(0));
+		auto optimum = std::max(s.time_manager.optimum() - SearchInterruptionChecker::kCheckIntervalMs , s64(0));
+		auto maximum = std::max(s.time_manager.maximum() - SearchInterruptionChecker::kCheckIntervalMs , s64(0));
+
 		const Node* current_root = tree->GetCurrentHead();
 		const int child_num = current_root->child_num;
 		if (child_num == 1)
 		{
 			// one replyなので最小時間だけ使い切れば良い。
-			s.time_manager.search_end = s.time_manager.minimum();
+			s.time_manager.search_end = mimimum;
 			return;
 		}
 
 		// 最小思考時間を使っていない。
-		if (elapsed_from_ponderhit < s.time_manager.minimum())
+		if (elapsed_from_ponderhit < mimimum)
 			return ;
 
 		// 最大思考時間を超過している。
-		if (elapsed_from_ponderhit > s.time_manager.maximum())
+		if (elapsed_from_ponderhit > maximum)
 		{
 			// この場合も余計な時間制御は不要。ただちに中断すべき。
 			interrupt();
 			return;
 		}
 
-		// 最適時間の1/3は必ず使うべき。
-		if (elapsed_from_ponderhit < s.time_manager.optimum() * 1/3)
-			return ;
-
 		// 詰み探索中で、探索し続ければ解けるのかも。
 		if (root_dfpn_searcher->searching)
 			return;
-
-		// 残り最適時間。残り最大時間。
-		auto optimum = s.time_manager.optimum();
-		auto maximum = s.time_manager.maximum();
 
 		// 序盤32手目まで少なめのおむすび型にする。
 		// TODO: パラメータの調整、optimizerでやるべき。
 		// Time management (LC0 blog)     : https://lczero.org/blog/2018/09/time-management/
 		// PR1195: Time management update : https://lczero.org/dev/docs/timemgr/
 		double game_ply_factor =
-			  s.game_ply <  16 ? 2.0
-			: s.game_ply <  32 ? 3.0
-			: s.game_ply <  80 ? 5.0 // 中盤の難所では時間使ったほうがいいと思う。
-			: s.game_ply < 120 ? 4.0
+			  s.game_ply <  20 ? 1.5 // 序盤では時間あまり使わないように。(時間を使ったところでそんなに良い指し手になるわけではないから)
+			: s.game_ply <  30 ? 3.5
+			: s.game_ply <  40 ? 4.0
 			: 3.0;
-		maximum = (TimePoint)std::min((double)optimum * game_ply_factor, (double)maximum);
+		// ⇑ここ、なめらかなほうがいいのかも知れないが、
+		// もともと目分量で決めてるものなので細かいことは気にしないことにする。
+
+		// maximum時間を基準に考えるので、これをoptimumをベースとして再計算する。
+		maximum = std::min((s64)(optimum * game_ply_factor) , maximum);
+
+		// elapsed         : "go" , もしくは"go ponder"～"ponderhit"(のponderhit)からの経過時間
+		// s.node_searched : 今回探索したノード数
+		// nps(nodes per second) = 今回探索したノード数 / elapsed
+		//                       = s.node_searched / (elapsed + 1)
+		// ⇨ 0除算になるといけないので 分母を(elapsed + 1)にしている。
+		//
+		// rest_max_po(最大残りplayout) = nps × 最大までの残り時間
+		// 最大までの残り時間 = maximum - elapsed_from_ponderhit
+		// よって、
+		// rest_max_po = s.node_searched * (maximum - elapsed_from_ponderhit) / (elapsed + 1)
+		// 同様に、
+		// rest_optimum_po(optimum timeまでの残りplayout) = nps × optimum timeまでの残り時間
+		// optimum timeまでの残り時間 = optimum - elapsed_from_ponderhit
+		// rest_optimum_po = s.node_searched * (optimum - elapsed_from_ponderhit) / (elapsed + 1)
+		
+		auto elapsed    = s.time_manager.elapsed();
+
+		// 残りoptimum po(予測値)
+		//s64 rest_optimum_po = std::max((s64)(s.nodes_searched * (optimum - elapsed_from_ponderhit) / (elapsed + 1)), (s64)0);
+
+		// 最大残りpo(予測値)
+		s64 rest_maximum_po = std::max((s64)(s.nodes_searched * (maximum - elapsed_from_ponderhit) / (elapsed + 1)), (s64)0);
 
 		// 残りの探索を全て次善手に費やしても optimum_timeまでに
 		// 最善手を超えられない場合は探索を打ち切る。
 
-		NodeCountType max_searched = 0, second_searched = 0;
-		WinType       max_eval     = 0, second_eval     = 0;
+		// best_searched   : move_countが最大の指し手のmove_count
+		// second_searched : move_countが2番目の指し手のmove_count
+		// すなわち、best_searched >= second_searched が成り立つ。
+
 		const ChildNode* uct_child = current_root->child.get();
 
+		// その時のindex
+		int best_i = 0, second_i = -1 , third_i = -1;
+
 		// 探索回数が最も多い手と次に多い手の評価値を求める。
+		for (int i = 1; i < child_num; i++) {
+			if (uct_child[i].move_count > uct_child[best_i].move_count) {
+				third_i         = second_i;
+				second_i        = best_i;
+				best_i          = i;
+			}
+			else if (second_i == -1 || uct_child[i].move_count > uct_child[second_i].move_count) {
+				third_i         = second_i;
+				second_i        = i;
+			}
+			else if (third_i == -1 || uct_child[i].move_count > uct_child[third_i].move_count)
+				third_i         = i;
+		}
+
+		NodeCountType best_searched   = uct_child[best_i  ].move_count;
+		NodeCountType second_searched = uct_child[second_i].move_count;
+
+		// best_winrate   : move_countが最大の指し手の勝率
+		// second_winrate : move_countが2番目の指し手の勝率
+		// ※　best_winrate >= second_winrate とは限らないので注意。
+
 		const WinType delta = (WinType)0.00001f; // 0割回避のための微小な値
-		for (int i = 0; i < child_num; i++) {
-			if (uct_child[i].move_count > max_searched) {
-				second_searched = max_searched;
-				second_eval     = max_eval;
-				max_searched    = uct_child[i].move_count;
-				max_eval        = uct_child[i].win / (uct_child[i].move_count+ delta);
+		WinType best_winrate       = uct_child[best_i  ].win / (best_searched   + delta);
+		WinType second_winrate     = uct_child[second_i].win / (second_searched + delta);
+
+		// 条件に該当したらbreak(思考を終了)、さもなくばreturnするためのfor loop。
+		for(;;)
+		{
+			if (rest_maximum_po > 0 /* maximum時間が残っている */)
+			{
+				WinType eval_diff = best_winrate - second_winrate;
+				bool converged = false;
+
+				// special case : 指し手が合流してると推測されるケース。
+				if (second_i!=third_i && third_i != -1 && elapsed >= optimum / 8
+					// && std::abs(eval_diff) < 0.02 && best_searched < second_searched * 1.1
+					// ⇑この条件なくてもいいや。(桂成と桂不成みたいなケースにおいてはpolicyに差があるからevalが近い値にならない。
+					)
+				{
+					// 指し手が本当に合流しているかPVの4手先を辿って確認する。
+					// →　合流した結果千日手になるパターンは、nodeが作られてないから、このチェックにひっかからない。
+
+					Node* node1 = current_root->child_nodes[best_i  ].get();
+					Node* node2 = current_root->child_nodes[second_i].get();
+
+					if (node1 != nullptr && node2 != nullptr)
+					{
+						// rootPosはスレッドごとに用意されているのでmemcpyして問題ない。
+						Position pos;
+						std::memcpy(&pos, &rootPos, sizeof(Position));
+						StateInfo si;
+
+						Move m1 = uct_child[best_i  ].move;
+						Move m2 = uct_child[second_i].move;
+
+						//sync_cout << to_usi_string(m1) << sync_endl;
+						//sync_cout << to_usi_string(m2) << sync_endl;
+
+						pos.do_move(m1,si);
+						Key64 k1[4]={},k2[4]={};
+						pv_key(pos, node1, 3, k1); // 4手先までのhash key 
+						pos.undo_move(m1);
+						pos.do_move(m2,si);
+						pv_key(pos, node2, 3, k2); // 4手先までのhash key 
+						pos.undo_move(m2);
+
+						// 現局面から数えてPVの2手先が一致するか4手先が一致するか。
+						// k1[0] = 4手先のhash key。k1[1] = 3手先のhash key。
+						// k1[2] = 2手先のhash key。k1[3] = 1手先のhash key。
+						if ((k1[0] == k2[0] && k1[0] != 0) || (k1[2] == k2[2] && k1[2] != 0) )
+						{
+							// 合流しているので3番目の指し手と比較する。
+
+							// 他の指し手が台頭してきていれば良いのだが..
+							NodeCountType third_searched  = uct_child[third_i ].move_count;
+							WinType third_winrate         = uct_child[third_i ].win / (third_searched + delta);
+
+							// 3番目の指し手を2番目の指し手とみなす。
+							// これでこのあとの早期終了条件を満たすならそれで停止させれば良い。
+							second_searched = third_searched;
+							second_winrate  = third_winrate;
+							eval_diff       = best_winrate - third_winrate;
+
+							converged = true;
+						}
+					}
+				}
+
+				// 安定した探索であると言える条件は、bestの訪問回数がsecondの1.5倍以上(この条件、重要)かつ、
+				// bestの期待勝率がsecondの期待勝率を上回ること。
+				if (   best_winrate >= second_winrate
+					&& best_searched >= second_searched * 1.5
+					)
+				{
+					// bestとsecondの勝率に応じて早期に思考を終了しても良いという考え。
+					// 勝率差0.2なら、探索が早期に終了して良いと思う。
+					WinType ratio = std::max( 1.0 - eval_diff * 5 , 0.0 );
+
+					// 経過時間がoptimum /8 を超えてるのに残りmaximum時間をすべて用いても訪問数が逆転しない。
+					// ただしこの時、eval_diffが0.1なら50%というように、eval_diffの値に応じてrest_optimum_poを減らして考える。
+					if (   elapsed >= optimum / 8
+						&& best_searched > second_searched + rest_maximum_po * ratio
+						)
+					{
+						if (o.debug_message)
+							sync_cout << "info string interrupted by early exit"
+							<< " , best_searched > second_searched + rest_maximum_po * " << ratio << " "
+							<< " , best_searched = "   << best_searched
+							<< " , second_searched = " << second_searched
+							<< " , rest_maximum_po = " << rest_maximum_po
+							<< " , elapsed = "         << elapsed
+							<< " , eval_diff = "       << eval_diff
+							<< " , ratio = "           << ratio
+							<< " , converged = "       << converged
+							<< sync_endl;
+
+						break;
+					}
+				}
+
+				// いま、おそらく best_winrate < second_winrate なので
+				// これの行く末を見守る必要がある。(best_winrate >= second_winrateであって欲しい)
+				// しかし、どう頑張っても訪問回数で叶わないなら、諦める。
+
+				// maximum時間を超えていて、残り時間をすべて使っても訪問回数が逆転しない。
+				// ⇨　残念だけど、あきらめる。
+
+				if (best_searched > second_searched + rest_maximum_po)
+				{
+					if (o.debug_message)
+						sync_cout << "info string interrupted by retirement"
+						<< " , best_searched > second_searched + rest_maximum_po"
+						<< " , best_searched = "   << best_searched
+						<< " , second_searched = " << second_searched
+						<< " , rest_maximum_po = " << rest_maximum_po
+						<< sync_endl;
+
+					break;
+				}
+
+			} else { // rest_optimum_po == 0
+
+				if (o.debug_message)
+					sync_cout << "info string maximum time is over"
+					<< " , rest_maximum_po == 0"
+					<< " , best_winrate = "    << best_winrate
+					<< " , second_winrate = "  << second_winrate
+					<< " , best_searched = "   << best_searched
+					<< " , second_searched = " << second_searched
+					<< sync_endl;
+
+				break;
 			}
-			else if (uct_child[i].move_count > second_searched) {
-				second_searched = uct_child[i].move_count;
-				second_eval     = uct_child[i].win / (uct_child[i].move_count+ delta);
-			}
+
+			// どの条件にも該当しなかった。
+			return ;
 		}
+		// 残り時間くりあげて使って、終了すべき。
+		s.time_manager.search_end = s.time_manager.round_up(elapsed_from_ponderhit);
 
-		// elapsed : "go" , "go ponder"からの経過時間
-
-		// nps = 今回探索したノード数 / "go ponder"からの経過時間
-		// 今回探索したノード数 = node_searched
-		// なので、nps = node_searched / (e + 1)
-		// ※　0のとき0除算になるので分母を +1 する。
-		// rest_max_po = nps × 最大残り時間
-		// 最大残り時間 = maximum - elapsed
-		// なので、
-		// rest_po = (node_searched - pre_simulated)*(maximum - elapsed) / (e + 1)
-		
-		auto elapsed    = s.time_manager.elapsed();
-
-		// 最大残りpo
-		s64 rest_max_po = (s64)(s.nodes_searched * (maximum - elapsed_from_ponderhit) / (elapsed + 1));
-		// 何か条件をいじっているときに、rest_poがマイナスになりうるようになってしまうことがあるので
-		// マイナスであれば0とみなす。
-		rest_max_po = std::max(rest_max_po, (s64)0);
-
-		// 最大残りpoを費やしても1番目と2番目の訪問回数が逆転しない。
-		// これはもうだめぽ。
-		if (max_searched > second_searched + rest_max_po)
-		{
-			if (o.debug_message)
-				sync_cout << "info string interrupted by no movechange , max_searched = " << max_searched << " , second_searched = " << second_searched
-				<< " , rest_max_po = " << rest_max_po << sync_endl;
-
-			// 残り時間くりあげて使って、終了すべき。
-			s.time_manager.search_end = s.time_manager.round_up(elapsed_from_ponderhit);
-			return;
-		}
-
-		// 経過時間がoptimum/2を超えてるのに1番目と2番目の勝率が大差でかつ訪問回数も大差
-		if (elapsed_from_ponderhit >= optimum/2
-			&& second_eval - max_eval > 0.2
-			&& max_searched > second_searched * 5)
-		{
-			if (o.debug_message)
-				sync_cout << "info string interrupted by early exit , max_eval = " << second_eval << " , second_eval = " << second_eval
-				<< " , max_searched = " << max_searched << " , second_searched = " << second_searched << sync_endl;
-
-			// 残り時間くりあげて使って、終了すべき。
-			s.time_manager.search_end = s.time_manager.round_up(elapsed_from_ponderhit);
-			return;
-		}
-
-		// optimumを0%、maximumを100%として、何%ぐらい延長して良いのか。
-
-		// 延長度 = evalの差について + 1番目と2番目の訪問回数の比について
-		// evalの差について     = 差が0なら0%。差×r
-		// 訪問回数の比について = ((2番目の訪問回数/1番目の訪問回数) - k)/(1-k)
-		//     2番目の訪問回数/1番目の訪問回数 = k1以下のときに    0%になる
-		//     2番目の訪問回数/1番目の訪問回数 = k2以上のときに  100%になる
-
-		// TODO : パラメーターのチューニングすべき。
-		const float k1 = 0.70000f;
-		const float k2 = 1.00000f;
-		const float r = 20.0f; // 勝率0.02の差 = 延長度40%
-		const float eval_alpha = 0.02f; // evalの差に下駄履きさせる値。微差は拾い上げる考え。
-
-		float eval_bonus  = std::min(std::max(float((second_eval - max_eval + eval_alpha) * r),0.0f),1.0f);
-		float visit_bonus = std::max(float( (double(second_searched) / (double(max_searched) + 1) - k1)/(k2-k1)),0.0f);
-		float bonus = std::max(std::min(eval_bonus + visit_bonus , 1.0f),0.0f);
-		TimePoint time_limit = (TimePoint)(double(optimum) * (1.0 - bonus) + double(maximum) * bonus);
-		if (elapsed_from_ponderhit >= time_limit)
-		{
-			if (o.debug_message)
-				sync_cout << "info string interrupted by bonus limit , eval_bonus = " << eval_bonus << " , visit_bonus = " << visit_bonus
-				<< " , time_limit = " << time_limit << " , max_searched = " << max_searched << ", second_searched = " << second_searched << sync_endl;
-
-			// 残り時間くりあげて使って、終了すべき。
-			s.time_manager.search_end = s.time_manager.round_up(elapsed_from_ponderhit);
-			return;
-		}
 	}
 
 	// 並列探索を行う。
@@ -849,7 +970,7 @@ namespace dlshogi
 
 		// 探索終了判定用。
 		else if (thread_id == s)
-			interruption_checker->Worker();
+			interruption_checker->Worker(rootPos);
 
 		else if (thread_id == s + 1)
 			root_dfpn_searcher->search(rootPos, search_options.root_mate_search_nodes_limit); // df-pnの探索ノード数制限
@@ -864,7 +985,7 @@ namespace dlshogi
 
 	// ガーベジ用のスレッドが実行するworker
 	// 探索開始時にこの関数を呼び出す。
-	void SearchInterruptionChecker::Worker()
+	void SearchInterruptionChecker::Worker(const Position& rootPos)
 	{
 		// スレッド停止命令が来るまで、kCheckIntervalMs[ms]ごとにInterruptionCheck()を実行する。
 
@@ -880,7 +1001,7 @@ namespace dlshogi
 			std::this_thread::sleep_for(std::chrono::milliseconds(kCheckIntervalMs));
 
 			// 探索の終了チェック
-			ds->InterruptionCheck();
+			ds->InterruptionCheck(rootPos);
 
 			// ここにも終了判定を入れておいたほうが、探索停止確定にPV出力しなくてよろしい。
 			if (stop())
