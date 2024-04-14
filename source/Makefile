@@ -291,6 +291,18 @@ ifneq (,$(findstring YANEURAOU_ENGINE_NNUE,$(YANEURAOU_EDITION)))
 		BLAS_LDFLAGS += -L$(shell cygpath -aw /usr/local/lib)
 	endif
 endif
+ifeq ($(YANEURAOU_EDITION),YANEURAOU_ENGINE_NNUE_HALFKA_512X2_8X2_32)
+	BLAS_CPPFLAGS=
+	BLAS_LDFLAGS=
+endif
+ifeq ($(YANEURAOU_EDITION),YANEURAOU_ENGINE_NNUE_HALFKA_1024_8_32)
+	BLAS_CPPFLAGS=
+	BLAS_LDFLAGS=
+endif
+ifeq ($(YANEURAOU_EDITION),YANEURAOU_ENGINE_NNUE_HALFKA_1280_8_32)
+	BLAS_CPPFLAGS=
+	BLAS_LDFLAGS=
+endif
 
 CPPFLAGS += -DNO_EXCEPTIONS
 LDFLAGS += -lpthread
@@ -453,7 +465,17 @@ ifneq (,$(findstring YANEURAOU_ENGINE_NNUE,$(YANEURAOU_EDITION)))
 
 		else ifeq ($(YANEURAOU_EDITION),YANEURAOU_ENGINE_NNUE_HALFKP_VM_256X2_32_32)
 			CPPFLAGS += -DEVAL_NNUE_HALFKP_VM_256X2_32_32
-
+		else ifeq ($(YANEURAOU_EDITION),YANEURAOU_ENGINE_NNUE_HALFKA_512X2_8X2_32)
+			CPPFLAGS += -DEVAL_NNUE_HALFKA_512X2_8X2_32
+			CPPFLAGS += -DUSE_STOCKFISH_NNUE
+		else ifeq ($(YANEURAOU_EDITION),YANEURAOU_ENGINE_NNUE_HALFKA_1024_8_32)
+			CPPFLAGS += -DEVAL_NNUE_HALFKA_1024_8_32
+			CPPFLAGS += -DUSE_STOCKFISH_NNUE
+			CPPFLAGS += -DUSE_ELEMENT_WISE_MULTIPLY
+		else ifeq ($(YANEURAOU_EDITION),YANEURAOU_ENGINE_NNUE_HALFKA_1280_8_32)
+			CPPFLAGS += -DEVAL_NNUE_HALFKA_1280_8_32
+			CPPFLAGS += -DUSE_STOCKFISH_NNUE
+			CPPFLAGS += -DUSE_ELEMENT_WISE_MULTIPLY
 		endif
 	endif
 
@@ -469,6 +491,7 @@ ifneq (,$(findstring YANEURAOU_ENGINE_NNUE,$(YANEURAOU_EDITION)))
 		eval/nnue/features/half_relative_kp.cpp                         \
 		eval/nnue/features/half_kpe9.cpp                                \
 		eval/nnue/features/pe9.cpp                                      \
+		eval/nnue/features/half_ka.cpp                                  \
 		engine/yaneuraou-engine/yaneuraou-search.cpp
 
 	ifneq (,$(findstring em++,$(COMPILER)))

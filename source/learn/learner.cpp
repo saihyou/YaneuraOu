@@ -68,7 +68,7 @@
 #include "../mate/mate.h"
 #include "multi_think.h"
 
-#if defined(EVAL_NNUE)
+#if defined(EVAL_NNUE) && !defined(USE_STOCKFISH_NNUE)
 #include "../eval/nnue/evaluate_nnue_learner.h"
 #include <shared_mutex>
 #endif
@@ -1505,7 +1505,7 @@ struct LearnerThink: public MultiThink
 		learn_sum_entropy_win = 0.0;
 		learn_sum_entropy = 0.0;
 #endif
-#if defined(EVAL_NNUE)
+#if defined(EVAL_NNUE) && !defined(USE_STOCKFISH_NNUE)
 		newbob_scale = 1.0;
 		newbob_decay = 1.0;
 		newbob_num_trials = 2;
@@ -1562,7 +1562,7 @@ struct LearnerThink: public MultiThink
 	atomic<double> learn_sum_entropy;
 #endif
 
-#if defined(EVAL_NNUE)
+#if defined(EVAL_NNUE) && !defined(USE_STOCKFISH_NNUE)
 	shared_timed_mutex nn_mutex;
 	double newbob_scale;
 	double newbob_decay;
@@ -1587,7 +1587,7 @@ struct LearnerThink: public MultiThink
 
 void LearnerThink::calc_loss(size_t thread_id, u64 done)
 {
-
+#if !defined(USE_STOCKFISH_NNUE)
 #if defined(EVAL_NNUE)
 	std::cout << "PROGRESS: " << Tools::now_string() << ", ";
 	std::cout << sr.total_done << " sfens";
@@ -1826,11 +1826,13 @@ void LearnerThink::calc_loss(size_t thread_id, u64 done)
 #else
 	<< endl;
 #endif
+#endif // #if !defined(USE_STOCKFISH_NNUE)
 }
 
 
 void LearnerThink::thread_worker(size_t thread_id)
 {
+#if !defined(USE_STOCKFISH_NNUE)
 #if defined(_OPENMP)
 	omp_set_num_threads((int)Options["Threads"]);
 #endif
@@ -2140,12 +2142,14 @@ void LearnerThink::thread_worker(size_t thread_id)
 #endif
 
 	}
+#endif
 }
 
 
 // 評価関数ファイルの書き出し。
 bool LearnerThink::save(bool is_final)
 {
+#if !defined(USE_STOCKFISH_NNUE)
 	// 保存前にcheck sumを計算して出力しておく。(次に読み込んだときに合致するか調べるため)
 	std::cout << "Check Sum = " << std::hex << Eval::calc_check_sum() << std::dec << std::endl;
 
@@ -2201,6 +2205,7 @@ bool LearnerThink::save(bool is_final)
 		}
 #endif
 	}
+#endif
 	return false;
 }
 
@@ -2842,7 +2847,7 @@ void learn(Position&, istringstream& is)
 
 	// 評価関数パラメーターの勾配配列の初期化
 	Eval::init_grad(eta1,eta1_epoch,eta2,eta2_epoch,eta3);
-#else
+#elif !defined(USE_STOCKFISH_NNUE)
 	cout << "init_training.." << endl;
 	Eval::NNUE::InitializeTraining(eta1,eta1_epoch,eta2,eta2_epoch,eta3);
 	Eval::NNUE::SetBatchSize(nn_batch_size);
@@ -2873,7 +2878,7 @@ void learn(Position&, istringstream& is)
 	learn_think.sr.no_shuffle = no_shuffle;
 	learn_think.freeze = freeze;
 	learn_think.reduction_gameply = reduction_gameply;
-#if defined(EVAL_NNUE)
+#if defined(EVAL_NNUE) && !defined(USE_STOCKFISH_NNUE)
 	learn_think.newbob_scale = 1.0;
 	learn_think.newbob_decay = newbob_decay;
 	learn_think.newbob_num_trials = newbob_num_trials;
@@ -2899,7 +2904,7 @@ void learn(Position&, istringstream& is)
 
 	// この時点で一度rmseを計算(0 sfenのタイミング)
 	// sr.calc_rmse();
-#if defined(EVAL_NNUE)
+#if defined(EVAL_NNUE) && !defined(USE_STOCKFISH_NNUE)
 	if (newbob_decay != 1.0) {
 		learn_think.calc_loss(0, -1);
 		learn_think.best_loss = learn_think.latest_loss_sum / learn_think.latest_loss_count;
@@ -3535,6 +3540,171 @@ namespace Learner {
 #endif
 
 	}
+
+	struct MultiThinkFilterSfen : public MultiThink {
+        MultiThinkFilterSfen(SfenReader& reader, SfenWriter& writer, bool smart_fen_skipping,
+			bool qsearch_sfen_skipping, bool depth6_filter, int eval_filter, bool mirror_move)
+            : sfen_reader_(reader), sfen_writer_(writer), smart_sfen_skipping_(smart_fen_skipping),
+			  qsearch_sfen_skipping_(qsearch_sfen_skipping), depth6_filter_(depth6_filter),
+			  eval_filter_(eval_filter), mirror_move_(mirror_move)  {}
+
+        void init() {}
+        virtual void thread_worker(size_t thread_id);
+        void start_file_write_worker() { sfen_writer_.start_file_write_worker(); }
+        void start_file_read_worker() { sfen_reader_.start_file_read_worker(); }
+
+        SfenReader& sfen_reader_;
+        SfenWriter& sfen_writer_;
+		bool smart_sfen_skipping_;
+		bool qsearch_sfen_skipping_;
+		bool depth6_filter_;
+		int eval_filter_;
+		bool mirror_move_;
+    };
+
+	void MultiThinkFilterSfen::thread_worker(size_t thread_id) {
+		std::vector<StateInfo> states(MAX_PLY /* == search_depth + α */);
+		StateInfo* const states_pointer = &states[0];
+		// Positionに対して従属スレッドの設定が必要。
+		// 並列化するときは、Threads (これが実体が vector<Thread*>なので、
+		// Threads[0]...Threads[thread_num-1]までに対して同じようにすれば良い。
+		auto& th = *Threads[thread_id];
+
+		auto& pos = th.rootPos;
+		bool quit = false;
+		while (!quit) {
+			PackedSfenValue ps;
+			if (!sfen_reader_.read_to_thread_buffer(thread_id, ps)) {
+				quit = true;
+				break;
+			}
+			if (!pos.set_from_packed_sfen(ps.sfen, states_pointer, &th).is_ok()) {
+				cout << "Error! : illegal packed sfen = " << pos.sfen() << endl;
+				break;
+			}
+			if (eval_filter_ > 0 && (ps.score > eval_filter_ || ps.score < -eval_filter_)) {
+				continue;
+			}
+			if (smart_sfen_skipping_) {
+				auto move = pos.to_move(ps.move);
+				if (pos.in_check() || pos.capture(move)) {
+					continue;
+				}
+			}
+			if (qsearch_sfen_skipping_) {
+				auto pv_value = qsearch(pos);
+                if (!pv_value.second.empty()) {
+					continue;
+				}
+			}
+			if (depth6_filter_) {
+				auto pv_value = search(pos, 6, 2);
+				if (th.rootMoves.size() <= 1) {
+					continue;
+				}
+				auto best_move = th.rootMoves[0].pv[0];
+				if (pos.capture(best_move)) {
+					continue;
+				}
+				Value bestmove1_score = th.rootMoves[0].score;
+				Value bestmove2_score = th.rootMoves[1].score;
+				if (abs(bestmove1_score) < 100 && abs(bestmove2_score) > 150) {
+					// best move about equal, 2nd best move loses
+					continue;
+				} else if (abs(bestmove1_score) > 150 && abs(bestmove2_score) < 100) {
+					// best move gains advantage, 2nd best move equalizes
+					continue;
+				} else if ((bestmove1_score > 0) != (bestmove2_score > 0)) {
+					// if the 2 best move scores favor different sides
+					if (abs(bestmove1_score) > 150 && abs(bestmove2_score) > 150) {
+						// best move gains an advantage, 2nd best move loses
+						continue;
+					} else if (abs(bestmove1_score - bestmove2_score) > 200) {
+						// score diff threshold if the best moves favor different sides
+						continue;
+					}
+				}
+			}
+			sfen_writer_.write(thread_id, ps);
+			if (mirror_move_) {
+                Position mirror_pos;
+				StateInfo si;
+                if (mirror_pos.set_from_packed_sfen(ps.sfen, &si, &th, true).is_ok()) {
+                	PackedSfenValue mirror = ps;
+                    mirror_pos.sfen_pack(mirror.sfen);
+                    u16 mirror_move16 = 0;
+                    Square mirror_to = Mir(to_sq(ps.move));
+                    Square mirror_from = from_sq(ps.move);
+                    if (is_drop(ps.move)) {
+                    	mirror_move16 = ps.move & 0xFF00 | static_cast<u16>(mirror_to);
+                    } else {
+                        mirror_from = Mir(mirror_from);
+                        mirror_move16 = (mirror_from << 7) | static_cast<u16>(mirror_to);
+                        if (is_promote(ps.move)) {
+                        	mirror_move16 |= MOVE_PROMOTE;
+                        }
+                    }
+                    mirror.move = mirror_move16;
+                    sfen_writer_.write(thread_id, mirror);
+                }
+			}
+		}
+		sfen_writer_.finalize(thread_id);
+	}
+
+	void filter_sfen(Position& pos, istringstream& is) {
+        u32 thread_num = (u32)Options["Threads"];
+        string input_file_name = "input.bin";
+    	string output_file_name = "filter.bin";
+		bool smart_sfen_skipping = false;
+		bool qsearch_sfen_skipping = false;
+		bool depth6_filter = false;
+		int eval_filter = -1;
+		bool mirror_move = false;
+        while (true) {
+            string token = "";
+            is >> token;
+            if (token == "") {
+                break;
+            }
+            if (token == "input_file_name") {
+                is >> input_file_name;
+            } else if (token == "output_file_name") {
+                is >> output_file_name;
+            } else if (token == "smart_sfen_skipping") {
+				smart_sfen_skipping = true;
+			} else if (token == "qsearch_sfen_skipping") {
+				qsearch_sfen_skipping = true;
+			} else if (token == "depth6_filter") {
+				depth6_filter = true;
+			} else if (token == "eval_filter") {
+				eval_filter = true;
+			} else if (token == "mirror_move") {
+				mirror_move = true;
+			}
+        }
+        std::cout << "filter_sfen : " << endl
+                  << "  input_file_name = " << input_file_name << endl
+                  << "  output_file_name = " << output_file_name << endl
+				  << "  smart_sfen_skipping = " << smart_sfen_skipping << endl
+				  << "  qsearch_sfen_skipping = " << qsearch_sfen_skipping << endl
+				  << "  depth6_filter = " << depth6_filter << endl
+				  << "  eval_filter = " << eval_filter << endl
+				  << "  mirror_move = "  << mirror_move << endl;
+
+        {
+            SfenWriter sw(output_file_name, thread_num);
+            SfenReader sr(thread_num);
+            sr.filenames.push_back(input_file_name);
+            sr.no_shuffle = true;
+
+            MultiThinkFilterSfen multi_think(sr, sw, smart_sfen_skipping, qsearch_sfen_skipping, depth6_filter, eval_filter, mirror_move);
+            multi_think.start_file_read_worker();
+            multi_think.start_file_write_worker();
+            multi_think.go_think();
+        }
+        std::cout << "filter_sfen finished." << endl;
+    }
 }
 
 #endif // defined(EVAL_LEARN) && defined(GENSFEN2019)
