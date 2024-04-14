@@ -2,7 +2,7 @@
 
 #include "../../config.h"
 
-#if defined(EVAL_LEARN) && defined(EVAL_NNUE)
+#if defined(EVAL_LEARN) && defined(EVAL_NNUE) && !defined(USE_STOCKFISH_NNUE)
 
 #include <random>
 #include <fstream>
