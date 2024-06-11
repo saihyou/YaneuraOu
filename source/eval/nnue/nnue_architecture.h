@@ -57,6 +57,9 @@
 #elif defined(EVAL_NNUE_HALFKA_1280_8_32)
 #include "architectures/halfka_1280-8-32.h"
 
+#elif defined(EVAL_NNUE_HALFKA_1280_8_64)
+#include "architectures/halfka_1280-8-64.h"
+
 #else
 
 // どれも定義されていなかったので標準NNUE型にしておく。
