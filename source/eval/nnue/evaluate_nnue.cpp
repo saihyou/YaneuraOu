@@ -60,7 +60,14 @@ namespace Eval {
                     stream.read(reinterpret_cast<char*>(&header), sizeof(header));
 					if (!stream)                     return Tools::ResultCode::FileReadError;
 					if (header != T::GetHashValue()) return Tools::ResultCode::FileMismatch;
+#ifdef USE_STOCKFISH_NNUE
+                    if (pointer->ReadParameters(stream)) {
+                        return Tools::ResultCode::Ok;
+                    }
+                    return Tools::ResultCode::FileReadError;
+#else
                     return pointer->ReadParameters(stream);
+#endif
                 }
 
                 // 評価関数パラメータを書き込む
