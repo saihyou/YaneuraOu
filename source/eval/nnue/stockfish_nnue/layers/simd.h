@@ -1,6 +1,6 @@
 /*
   Stockfish, a UCI chess playing engine derived from Glaurung 2.1
-  Copyright (C) 2004-2023 The Stockfish developers (see AUTHORS file)
+  Copyright (C) 2004-2024 The Stockfish developers (see AUTHORS file)
 
   Stockfish is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -43,39 +43,6 @@ namespace Stockfish::Simd {
     return _mm512_reduce_add_epi32(sum) + bias;
 }
 
-/*
-      Parameters:
-        sum0 = [zmm0.i128[0], zmm0.i128[1], zmm0.i128[2], zmm0.i128[3]]
-        sum1 = [zmm1.i128[0], zmm1.i128[1], zmm1.i128[2], zmm1.i128[3]]
-        sum2 = [zmm2.i128[0], zmm2.i128[1], zmm2.i128[2], zmm2.i128[3]]
-        sum3 = [zmm3.i128[0], zmm3.i128[1], zmm3.i128[2], zmm3.i128[3]]
-
-      Returns:
-        ret = [
-          reduce_add_epi32(zmm0.i128[0]), reduce_add_epi32(zmm1.i128[0]), reduce_add_epi32(zmm2.i128[0]), reduce_add_epi32(zmm3.i128[0]),
-          reduce_add_epi32(zmm0.i128[1]), reduce_add_epi32(zmm1.i128[1]), reduce_add_epi32(zmm2.i128[1]), reduce_add_epi32(zmm3.i128[1]),
-          reduce_add_epi32(zmm0.i128[2]), reduce_add_epi32(zmm1.i128[2]), reduce_add_epi32(zmm2.i128[2]), reduce_add_epi32(zmm3.i128[2]),
-          reduce_add_epi32(zmm0.i128[3]), reduce_add_epi32(zmm1.i128[3]), reduce_add_epi32(zmm2.i128[3]), reduce_add_epi32(zmm3.i128[3])
-        ]
-    */
-[[maybe_unused]] static __m512i
-m512_hadd128x16_interleave(__m512i sum0, __m512i sum1, __m512i sum2, __m512i sum3) {
-
-    __m512i sum01a = _mm512_unpacklo_epi32(sum0, sum1);
-    __m512i sum01b = _mm512_unpackhi_epi32(sum0, sum1);
-
-    __m512i sum23a = _mm512_unpacklo_epi32(sum2, sum3);
-    __m512i sum23b = _mm512_unpackhi_epi32(sum2, sum3);
-
-    __m512i sum01 = _mm512_add_epi32(sum01a, sum01b);
-    __m512i sum23 = _mm512_add_epi32(sum23a, sum23b);
-
-    __m512i sum0123a = _mm512_unpacklo_epi64(sum01, sum23);
-    __m512i sum0123b = _mm512_unpackhi_epi64(sum01, sum23);
-
-    return _mm512_add_epi32(sum0123a, sum0123b);
-}
-
 [[maybe_unused]] static void m512_add_dpbusd_epi32(__m512i& acc, __m512i a, __m512i b) {
 
     #if defined(USE_VNNI)
@@ -84,21 +51,6 @@ m512_hadd128x16_interleave(__m512i sum0, __m512i sum1, __m512i sum2, __m512i sum
     __m512i product0 = _mm512_maddubs_epi16(a, b);
     product0         = _mm512_madd_epi16(product0, _mm512_set1_epi16(1));
     acc              = _mm512_add_epi32(acc, product0);
-    #endif
-}
-
-[[maybe_unused]] static void
-m512_add_dpbusd_epi32x2(__m512i& acc, __m512i a0, __m512i b0, __m512i a1, __m512i b1) {
-
-    #if defined(USE_VNNI)
-    acc = _mm512_dpbusd_epi32(acc, a0, b0);
-    acc = _mm512_dpbusd_epi32(acc, a1, b1);
-    #else
-    __m512i product0 = _mm512_maddubs_epi16(a0, b0);
-    __m512i product1 = _mm512_maddubs_epi16(a1, b1);
-    product0         = _mm512_madd_epi16(product0, _mm512_set1_epi16(1));
-    product1         = _mm512_madd_epi16(product1, _mm512_set1_epi16(1));
-    acc              = _mm512_add_epi32(acc, _mm512_add_epi32(product0, product1));
     #endif
 }
 
@@ -124,21 +76,6 @@ m512_add_dpbusd_epi32x2(__m512i& acc, __m512i a0, __m512i b0, __m512i a1, __m512
     #endif
 }
 
-[[maybe_unused]] static void
-m256_add_dpbusd_epi32x2(__m256i& acc, __m256i a0, __m256i b0, __m256i a1, __m256i b1) {
-
-    #if defined(USE_VNNI)
-    acc = _mm256_dpbusd_epi32(acc, a0, b0);
-    acc = _mm256_dpbusd_epi32(acc, a1, b1);
-    #else
-    __m256i product0 = _mm256_maddubs_epi16(a0, b0);
-    __m256i product1 = _mm256_maddubs_epi16(a1, b1);
-    product0         = _mm256_madd_epi16(product0, _mm256_set1_epi16(1));
-    product1         = _mm256_madd_epi16(product1, _mm256_set1_epi16(1));
-    acc              = _mm256_add_epi32(acc, _mm256_add_epi32(product0, product1));
-    #endif
-}
-
 #endif
 
 #if defined(USE_SSSE3)
@@ -156,26 +93,9 @@ m256_add_dpbusd_epi32x2(__m256i& acc, __m256i a0, __m256i b0, __m256i a1, __m256
     acc              = _mm_add_epi32(acc, product0);
 }
 
-[[maybe_unused]] static void
-m128_add_dpbusd_epi32x2(__m128i& acc, __m128i a0, __m128i b0, __m128i a1, __m128i b1) {
-
-    __m128i product0 = _mm_maddubs_epi16(a0, b0);
-    __m128i product1 = _mm_maddubs_epi16(a1, b1);
-    product0         = _mm_madd_epi16(product0, _mm_set1_epi16(1));
-    product1         = _mm_madd_epi16(product1, _mm_set1_epi16(1));
-    acc              = _mm_add_epi32(acc, _mm_add_epi32(product0, product1));
-}
-
 #endif
 
 #if defined(USE_NEON_DOTPROD)
-
-[[maybe_unused]] static void dotprod_m128_add_dpbusd_epi32x2(
-  int32x4_t& acc, int8x16_t a0, int8x16_t b0, int8x16_t a1, int8x16_t b1) {
-
-    acc = vdotq_s32(acc, a0, b0);
-    acc = vdotq_s32(acc, a1, b1);
-}
 
 [[maybe_unused]] static void
 dotprod_m128_add_dpbusd_epi32(int32x4_t& acc, int8x16_t a, int8x16_t b) {
@@ -198,13 +118,6 @@ dotprod_m128_add_dpbusd_epi32(int32x4_t& acc, int8x16_t a, int8x16_t b) {
     return neon_m128_reduce_add_epi32(sum) + bias;
 }
 
-[[maybe_unused]] static void
-neon_m128_add_dpbusd_epi32x2(int32x4_t& acc, int8x8_t a0, int8x8_t b0, int8x8_t a1, int8x8_t b1) {
-
-    int16x8_t product = vmull_s8(a0, b0);
-    product           = vmlal_s8(product, a1, b1);
-    acc               = vpadalq_s16(acc, product);
-}
 #endif
 
 #if USE_NEON >= 8
