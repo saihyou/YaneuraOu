@@ -587,6 +587,16 @@ public:
 	const Eval::EvalList* eval_list() const { return &evalList; }
 #endif
 
+#if defined (USE_LAYER_STACK)
+	int stack_index() const {
+		constexpr int kFToIndex[] = {2, 2, 2, 1, 1, 1, 0, 0, 0};
+		constexpr int kEToIndex[] = {6, 6, 6, 3, 3, 3, 0, 0, 0};
+		auto fKing = sideToMove == BLACK ? rank_of(king_square(sideToMove)) : rank_of(Inv(king_square(sideToMove)));
+		auto eKing = sideToMove == BLACK ? rank_of(Inv(king_square(~sideToMove))) : rank_of(king_square(~sideToMove));
+		return kFToIndex[fKing] + kEToIndex[eKing];
+	}
+#endif
+
 #if defined (USE_SEE)
 	// 指し手mのsee(Static Exchange Evaluation : 静的取り合い評価)において
 	// v(しきい値)以上になるかどうかを返す。

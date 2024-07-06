@@ -27,7 +27,11 @@ namespace Eval {
         AlignedPtr<FeatureTransformer> feature_transformer;
 
         // 評価関数
+#if defined(USE_LAYER_STACK)
+        AlignedPtr<Network> network[LayerStacks];
+#else
         AlignedPtr<Network> network;
+#endif
 
         // 評価関数ファイル名
         const char* const kFileName = "nn.bin";
@@ -83,7 +87,13 @@ namespace Eval {
             // 評価関数パラメータを初期化する
             void Initialize() {
                 Detail::Initialize(feature_transformer);
+#if defined(USE_LAYER_STACK)
+            for (int i = 0; i < LayerStacks; i++) {
+                Detail::Initialize(network[i]);
+            }
+#else
                 Detail::Initialize(network);
+#endif
             }
 
         }  // namespace
@@ -120,7 +130,14 @@ namespace Eval {
             if (result.is_not_ok()) return result;
             if (hash_value != kHashValue) return Tools::ResultCode::FileMismatch;
 			result = Detail::ReadParameters(stream, feature_transformer); if (result.is_not_ok()) return result;
+#if defined(USE_LAYER_STACK)
+            for (int i = 0; i < LayerStacks; i++) {
+                result = Detail::ReadParameters(stream, network[i]);
+                if (result.is_not_ok()) return result;
+            }
+#else
 			result = Detail::ReadParameters(stream, network);             if (result.is_not_ok()) return result;
+#endif
             return (stream && stream.peek() == std::ios::traits_type::eof()) ? Tools::ResultCode::Ok : Tools::ResultCode::FileCloseError;
         }
 
@@ -128,7 +145,13 @@ namespace Eval {
         bool WriteParameters(std::ostream& stream) {
             if (!WriteHeader(stream, kHashValue, GetArchitectureString())) return false;
             if (!Detail::WriteParameters(stream, feature_transformer)) return false;
+#if defined(USE_LAYER_STACK)
+            for (int i = 0; i < LayerStacks; i++) {
+                if (!Detail::WriteParameters(stream, network[i])) return false;
+            }
+#else
             if (!Detail::WriteParameters(stream, network)) return false;
+#endif
             return !stream.fail();
         }
 
@@ -148,7 +171,12 @@ namespace Eval {
                 transformed_features[FeatureTransformer::kBufferSize];
             feature_transformer->Transform(pos, transformed_features, refresh);
 #if USE_STOCKFISH_NNUE
+#if defined(USE_LAYER_STACK)
+            const auto bucket = pos.stack_index();
+            const auto output = network[bucket]->Propagate(transformed_features);
+#else
             const auto output = network->Propagate(transformed_features);
+#endif
 #else
             alignas(kCacheLineSize) char buffer[Network::kBufferSize];
             const auto output = network->Propagate(transformed_features, buffer);

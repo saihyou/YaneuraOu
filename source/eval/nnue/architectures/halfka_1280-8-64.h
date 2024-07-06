@@ -23,6 +23,8 @@ using RawFeatures = Features::FeatureSet<
 // Number of input feature dimensions after conversion
 constexpr Stockfish::Eval::NNUE::IndexType kTransformedFeatureDimensions = 1280;
 
+constexpr int LayerStacks = 9;
+
 struct Network
 {
   static constexpr int FC_0_OUTPUTS = 8;
