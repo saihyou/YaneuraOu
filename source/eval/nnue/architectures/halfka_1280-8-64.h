@@ -56,11 +56,19 @@ struct Network
 
   // Read network parameters
   bool ReadParameters(std::istream& stream) {
-    return   fc_0.read_parameters(stream)
+    auto result = fc_0.read_parameters(stream)
           && ac_0.read_parameters(stream)
           && fc_1.read_parameters(stream)
           && ac_1.read_parameters(stream)
           && fc_2.read_parameters(stream);
+    fc_2.print();
+    return result;
+  }
+
+  bool ReadL2Parameters(std::ifstream& l2) {
+    auto result =fc_2.read_parameters(l2);
+    fc_2.print();
+    return result;
   }
 
   // Write network parameters

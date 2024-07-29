@@ -264,7 +264,16 @@ namespace Eval {
 					if (!stream.is_open())
 						return Tools::Result(Tools::ResultCode::FileNotFound);
 
-                    return NNUE::ReadParameters(stream);
+                    auto result = NNUE::ReadParameters(stream);
+                    const std::string l2_file_path = Path::Combine(dir_name, "l2.bin");
+                    std::ifstream l2_stream(l2_file_path, std::ios::binary);
+                    if (!l2_stream.is_open()) {
+                        return result;
+                    }
+                    if (NNUE::network->ReadL2Parameters(l2_stream)) {
+                        return Tools::Result(Tools::ResultCode::Ok);
+                    }
+                    return Tools::Result(Tools::ResultCode::SomeError);
                 }
                 else {
                     // C++ way to prepare a buffer for a memory stream

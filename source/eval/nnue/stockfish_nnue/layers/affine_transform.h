@@ -295,6 +295,14 @@ class AffineTransform {
 #endif
     }
 
+    void print() {
+        std::cout << "{\"bias\": " << (int)biases[0] << ",";
+        for (IndexType i = 0; i < OutputDimensions * PaddedInputDimensions; i++) {
+            std::cout << "\"p" << i << "\": " << (int)weights[get_weight_index(i)] << ",";
+        }
+        std::cout << "}" << std::endl;
+    }
+
    private:
     using BiasType   = OutputType;
     using WeightType = std::int8_t;
