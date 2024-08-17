@@ -1,10 +1,10 @@
-﻿// NNUE評価関数の入力特徴量HalfKPE9の定義
+// NNUE評価関数の入力特徴量HalfKPE9の定義
 
 #include "../../../config.h"
 
 #if defined(EVAL_NNUE) && defined(LONG_EFFECT_LIBRARY) && defined(USE_BOARD_EFFECT_PREV)
 
-#include "half_kpe9.h"
+#include "half_kae_vm.h"
 #include "index_list.h"
 
 
@@ -35,10 +35,10 @@ inline int GetEffectCount(const Position& pos, Square sq_p, Color perspective_or
     }
 
     if (prev_effect) {
-      return std::min(int(pos.board_effect_prev[perspective].effect(sq_p)), 2);
+      return std::min(int(pos.board_effect_prev[perspective].effect(sq_p)), 1);
     }
     else {
-      return std::min(int(pos.board_effect[perspective].effect(sq_p)), 2);
+      return std::min(int(pos.board_effect[perspective].effect(sq_p)), 1);
     }
   }
 }
@@ -51,19 +51,29 @@ inline bool IsDirty(const Eval::DirtyPiece& dp, PieceNumber pn) {
   }
   return false;
 }
-
 }
 
 // 玉の位置とBonaPieceと利き数から特徴量のインデックスを求める
 template <Side AssociatedKing>
-inline IndexType HalfKPE9<AssociatedKing>::MakeIndex(Square sq_k, BonaPiece p, int effect1, int effect2) {
-  return (static_cast<IndexType>(fe_end) * static_cast<IndexType>(sq_k) + p)
-       + (static_cast<IndexType>(fe_end) * static_cast<IndexType>(SQ_NB) * (effect1 * 3 + effect2));
+inline IndexType HalfKAE_vm<AssociatedKing>::MakeIndex(Square sq_k, BonaPiece p, int effect1, int effect2) {
+    if (sq_k >= SQ_61) {
+		// 玉が6筋～9筋にいる場合、4筋～1筋に反転する。
+		sq_k = Mir(sq_k);
+		if (p >= fe_hand_end) {
+			// 持駒は反転しない。
+			IndexType piece_index = (p - fe_hand_end) / SQ_NB;
+			Square sq_p = static_cast<Square>((p - fe_hand_end) % SQ_NB);
+			sq_p = Mir(sq_p);
+			p = static_cast<BonaPiece>(fe_hand_end + piece_index * static_cast<IndexType>(SQ_NB) + sq_p);
+		}
+	}
+    return (static_cast<IndexType>(fe_end2) * static_cast<IndexType>(sq_k) + p)
+       + (static_cast<IndexType>(fe_end2) * static_cast<IndexType>(9 * 5) * (effect1 << 1 | effect2));
 }
 
 // 駒の情報を取得する
 template <Side AssociatedKing>
-inline void HalfKPE9<AssociatedKing>::GetPieces(
+inline void HalfKAE_vm<AssociatedKing>::GetPieces(
     const Position& pos, Color perspective,
     BonaPiece** pieces, Square* sq_target_k) {
   *pieces = (perspective == BLACK) ?
@@ -77,7 +87,7 @@ inline void HalfKPE9<AssociatedKing>::GetPieces(
 
 // 特徴量のうち、値が1であるインデックスのリストを取得する
 template <Side AssociatedKing>
-void HalfKPE9<AssociatedKing>::AppendActiveIndices(
+void HalfKAE_vm<AssociatedKing>::AppendActiveIndices(
     const Position& pos, Color perspective, IndexList* active) {
   // コンパイラの警告を回避するため、配列サイズが小さい場合は何もしない
   if (RawFeatures::kMaxActiveDimensions < kMaxActiveDimensions) return;
@@ -87,7 +97,7 @@ void HalfKPE9<AssociatedKing>::AppendActiveIndices(
   GetPieces(pos, perspective, &pieces, &sq_target_k);
   auto& board_effect = pos.board_effect;
 
-  for (PieceNumber i = PIECE_NUMBER_ZERO; i < PIECE_NUMBER_KING; ++i) {
+  for (PieceNumber i = PIECE_NUMBER_ZERO; i < PIECE_NUMBER_NB; ++i) {
     BonaPiece p = pieces[i];
     Square sq_p = GetSquareFromBonaPiece(p);
 
@@ -100,7 +110,7 @@ void HalfKPE9<AssociatedKing>::AppendActiveIndices(
 
 // 特徴量のうち、一手前から値が変化したインデックスのリストを取得する
 template <Side AssociatedKing>
-void HalfKPE9<AssociatedKing>::AppendChangedIndices(
+void HalfKAE_vm<AssociatedKing>::AppendChangedIndices(
     const Position& pos, Color perspective,
     IndexList* removed, IndexList* added) {
   BonaPiece* pieces;
@@ -108,9 +118,7 @@ void HalfKPE9<AssociatedKing>::AppendChangedIndices(
   GetPieces(pos, perspective, &pieces, &sq_target_k);
   const auto& dp = pos.state()->dirtyPiece;
 
-  for (int i = 0; i < dp.dirty_num; ++i) {
-    if (dp.pieceNo[i] >= PIECE_NUMBER_KING) continue;
-    
+  for (int i = 0; i < dp.dirty_num; ++i) {    
     const auto old_p = static_cast<BonaPiece>(dp.changed_piece[i].old_piece.from[perspective]);
     Square old_sq_p = GetSquareFromBonaPiece(old_p);
     removed->push_back(MakeIndex(sq_target_k, old_p
@@ -126,7 +134,7 @@ void HalfKPE9<AssociatedKing>::AppendChangedIndices(
       ));
   }
 
-  for (PieceNumber i = PIECE_NUMBER_ZERO; i < PIECE_NUMBER_KING; ++i) {
+  for (PieceNumber i = PIECE_NUMBER_ZERO; i < PIECE_NUMBER_NB; ++i) {
     if (IsDirty(dp, i)) {
       continue;
     }
@@ -147,8 +155,8 @@ void HalfKPE9<AssociatedKing>::AppendChangedIndices(
   }
 }
 
-template class HalfKPE9<Side::kFriend>;
-template class HalfKPE9<Side::kEnemy>;
+template class HalfKAE_vm<Side::kFriend>;
+template class HalfKAE_vm<Side::kEnemy>;
 
 }  // namespace Features
 

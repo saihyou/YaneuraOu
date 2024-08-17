@@ -6,7 +6,7 @@
 #include "../stockfish_nnue/nnue_common.h"
 
 #include "../features/feature_set.h"
-#include "../features/half_ka_vm.h"
+#include "../features/half_kae_vm.h"
 
 #include "../stockfish_nnue/layers/affine_transform.h"
 #include "../stockfish_nnue/layers/clipped_relu.h"
@@ -18,10 +18,10 @@ namespace Eval::NNUE {
 
 // Input features used in evaluation function
 using RawFeatures = Features::FeatureSet<
-    Features::HalfKA_vm<Features::Side::kFriend>>;
+    Features::HalfKAE_vm<Features::Side::kFriend>>;
 
 // Number of input feature dimensions after conversion
-constexpr Stockfish::Eval::NNUE::IndexType kTransformedFeatureDimensions = 1280;
+constexpr Stockfish::Eval::NNUE::IndexType kTransformedFeatureDimensions = 768;
 
 struct Network
 {

@@ -842,6 +842,8 @@ constexpr bool pretty_jp = false;
 	#define USE_BOARD_EFFECT_PREV
 #elif defined(EVAL_NNUE) // それ以外のNNUEなので標準NNUE halfKP256だと思われる。
 	#define EVAL_TYPE_NAME "NNUE"
+	#define LONG_EFFECT_LIBRARY
+	#define USE_BOARD_EFFECT_PREV
 #elif defined(EVAL_DEEP)
 	#if defined(ONNXRUNTIME)
 		#if defined(ORT_CPU)
