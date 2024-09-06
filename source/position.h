@@ -190,6 +190,8 @@ using StateListPtr = std::unique_ptr<StateList>;
 //       盤面
 // --------------------
 
+#if defined(USE_SFEN_PACKER)
+
 // packされたsfen
 struct PackedSfen {
 	u8 data[32];
@@ -235,6 +237,7 @@ struct PackedSfenHash {
 		return s;
 	}
 };
+#endif
 
 // 盤面
 class Position
@@ -918,7 +921,7 @@ private:
 	StateInfo* st;
 
 	// set_max_repetition_ply()で設定される、千日手の最大遡り手数
-	int max_repetition_ply = 16;
+	static int max_repetition_ply /* = 16 */;
 
 #if defined(USE_EVAL_LIST)
 	// 評価関数で用いる駒のリスト

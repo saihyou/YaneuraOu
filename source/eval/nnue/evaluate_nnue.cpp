@@ -63,11 +63,19 @@ namespace Eval {
 
                 // 評価関数パラメータを読み込む
                 template <typename T>
-                bool ReadParameters(std::istream& stream, const AlignedPtr<T>& pointer) {
+                Tools::Result ReadParameters(std::istream& stream, const AlignedPtr<T>& pointer) {
                     std::uint32_t header;
                     stream.read(reinterpret_cast<char*>(&header), sizeof(header));
-                    if (!stream || header != T::GetHashValue()) return false;
+					if (!stream)                     return Tools::ResultCode::FileReadError;
+					if (header != T::GetHashValue()) return Tools::ResultCode::FileMismatch;
+#ifdef USE_STOCKFISH_NNUE
+                    if (pointer->ReadParameters(stream)) {
+                        return Tools::ResultCode::Ok;
+                    }
+                    return Tools::ResultCode::FileReadError;
+#else
                     return pointer->ReadParameters(stream);
+#endif
                 }
 
                 // 評価関数パラメータを書き込む
@@ -96,16 +104,16 @@ namespace Eval {
         }  // namespace
 
         // ヘッダを読み込む
-        bool ReadHeader(std::istream& stream,
+        Tools::Result ReadHeader(std::istream& stream,
             std::uint32_t* hash_value, std::string* architecture) {
             std::uint32_t version, size;
             stream.read(reinterpret_cast<char*>(&version), sizeof(version));
             stream.read(reinterpret_cast<char*>(hash_value), sizeof(*hash_value));
             stream.read(reinterpret_cast<char*>(&size), sizeof(size));
-            if (!stream || version != kVersion) return false;
+			if (!stream || version != kVersion) return Tools::ResultCode::FileMismatch;
             architecture->resize(size);
             stream.read(&(*architecture)[0], size);
-            return !stream.fail();
+			return !stream.fail() ? Tools::ResultCode::Ok : Tools::ResultCode::FileReadError;
         }
 
         // ヘッダを書き込む
@@ -121,25 +129,33 @@ namespace Eval {
 
         // 評価関数パラメータを読み込む
 #if defined(USE_DUAL_NET)
-        bool ReadParameters(std::istream& stream, NetSize net_size) {
+        Tools::Result ReadParameters(std::istream& stream, NetSize net_size) {
 #else
-        bool ReadParameters(std::istream& stream) {
+        Tools::Result ReadParameters(std::istream& stream) {
 #endif
             std::uint32_t hash_value;
             std::string architecture;
-            if (!ReadHeader(stream, &hash_value, &architecture)) return false;
+			Tools::Result result = ReadHeader(stream, &hash_value, &architecture);
+            if (result.is_not_ok()) return result;
+            if (hash_value != kHashValue) return Tools::ResultCode::FileMismatch;
 #if defined(USE_DUAL_NET)
-            if (hash_value != kHashValue[net_size]) return false;
-            if (net_size == NetSize::Big && !Detail::ReadParameters(stream, feature_transformer_big)) return false;
-            if (net_size == NetSize::Small && !Detail::ReadParameters(stream, feature_transformer_small)) return false;
-            if (net_size == NetSize::Big && !Detail::ReadParameters(stream, network_big)) return false;
-            if (net_size == NetSize::Small && !Detail::ReadParameters(stream, network_small)) return false;
+            if (net_size == NetSize::Big) {
+              result = Detail::ReadParameters(stream, feature_transformer_big);
+              if (result.is_not_ok()) return result;
+              result = Detail::ReadParameters(stream, network_big);
+              if (result.is_not_ok()) return result;
+            }
+            if (net_size == NetSize::Small) {
+              result = Detail::ReadParameters(stream, feature_transformer_small);
+              if (result.is_not_ok()) return result;
+              result = Detail::ReadParameters(stream, network_small);
+              if (result.is_not_ok()) return result;
+            }
 #else
-            if (hash_value != kHashValue) return false;
-            if (!Detail::ReadParameters(stream, feature_transformer)) return false;
-            if (!Detail::ReadParameters(stream, network)) return false;
+            result = Detail::ReadParameters(stream, feature_transformer); if (result.is_not_ok()) return result;
+			result = Detail::ReadParameters(stream, network);             if (result.is_not_ok()) return result;
 #endif
-            return stream && stream.peek() == std::ios::traits_type::eof();
+            return (stream && stream.peek() == std::ios::traits_type::eof()) ? Tools::ResultCode::Ok : Tools::ResultCode::FileCloseError;
         }
 
         // 評価関数パラメータを書き込む
@@ -334,7 +350,7 @@ namespace Eval {
 			// WASM
 			const std::string file_name = Options["EvalFile"];
 #endif
-            const bool result = [&] {
+            const Tools::Result result = [&] {
                 if (dir_name != "<internal>") {
                     auto full_dir_name = Path::Combine(Directory::GetCurrentFolder(), dir_name);
                     sync_cout << "info string EvalDirectory = " << full_dir_name << sync_endl;
@@ -353,6 +369,8 @@ namespace Eval {
                     const std::string file_path = Path::Combine(dir_name, file_name);
                     std::ifstream stream(file_path, std::ios::binary);
                     sync_cout << "info string loading eval file : " << file_path << sync_endl;
+					if (!stream.is_open())
+						return Tools::Result(Tools::ResultCode::FileNotFound);
 
                     return NNUE::ReadParameters(stream);
 #endif
@@ -382,10 +400,10 @@ namespace Eval {
 
             //      ASSERT(result);
 
-            if (!result)
+            if (result.is_not_ok())
             {
                 // 読み込みエラーのとき終了してくれないと困る。
-                sync_cout << "Error! : failed to read " << file_name << sync_endl;
+                sync_cout << "Error! : failed to read " << file_name << " : " << result.to_string() << sync_endl;
                 Tools::exit();
             }
         }

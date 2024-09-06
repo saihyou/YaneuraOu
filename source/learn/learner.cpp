@@ -1509,7 +1509,7 @@ struct LearnerThink: public MultiThink
 		newbob_scale = 1.0;
 		newbob_decay = 1.0;
 		newbob_num_trials = 2;
-		best_loss = std::numeric_limits<double>::infinity();
+		best_loss = std::numeric_limits<double>::max();
 		latest_loss_sum = 0.0;
 		latest_loss_count = 0;
 #endif
@@ -3397,7 +3397,7 @@ namespace Learner {
 	}
 
 	// gensfen2019コマンド本体
-	void gen_sfen2019(Position& pos, istringstream& is)
+	void gen_sfen2019([[maybe_unused]] Position& pos, [[maybe_unused]] istringstream& is)
 	{
 		// スレッド数(これは、USIのsetoptionで与えられる)
 		u32 thread_num = (u32)Options["Threads"];
@@ -3543,10 +3543,10 @@ namespace Learner {
 
 	struct MultiThinkFilterSfen : public MultiThink {
         MultiThinkFilterSfen(SfenReader& reader, SfenWriter& writer, bool smart_fen_skipping,
-			bool qsearch_sfen_skipping, bool depth6_filter, bool mirror_move)
+			bool qsearch_sfen_skipping, bool depth6_filter, int eval_filter, bool mirror_move)
             : sfen_reader_(reader), sfen_writer_(writer), smart_sfen_skipping_(smart_fen_skipping),
 			  qsearch_sfen_skipping_(qsearch_sfen_skipping), depth6_filter_(depth6_filter),
-			  mirror_move_(mirror_move)  {}
+			  eval_filter_(eval_filter), mirror_move_(mirror_move)  {}
 
         void init() {}
         virtual void thread_worker(size_t thread_id);
@@ -3558,6 +3558,7 @@ namespace Learner {
 		bool smart_sfen_skipping_;
 		bool qsearch_sfen_skipping_;
 		bool depth6_filter_;
+		int eval_filter_;
 		bool mirror_move_;
     };
 
@@ -3580,6 +3581,9 @@ namespace Learner {
 			if (!pos.set_from_packed_sfen(ps.sfen, states_pointer, &th).is_ok()) {
 				cout << "Error! : illegal packed sfen = " << pos.sfen() << endl;
 				break;
+			}
+			if (eval_filter_ > 0 && (ps.score > eval_filter_ || ps.score < -eval_filter_)) {
+				continue;
 			}
 			if (smart_sfen_skipping_) {
 				auto move = pos.to_move(ps.move);
@@ -3655,6 +3659,7 @@ namespace Learner {
 		bool smart_sfen_skipping = false;
 		bool qsearch_sfen_skipping = false;
 		bool depth6_filter = false;
+		int eval_filter = -1;
 		bool mirror_move = false;
         while (true) {
             string token = "";
@@ -3672,6 +3677,8 @@ namespace Learner {
 				qsearch_sfen_skipping = true;
 			} else if (token == "depth6_filter") {
 				depth6_filter = true;
+			} else if (token == "eval_filter") {
+				eval_filter = true;
 			} else if (token == "mirror_move") {
 				mirror_move = true;
 			}
@@ -3682,6 +3689,7 @@ namespace Learner {
 				  << "  smart_sfen_skipping = " << smart_sfen_skipping << endl
 				  << "  qsearch_sfen_skipping = " << qsearch_sfen_skipping << endl
 				  << "  depth6_filter = " << depth6_filter << endl
+				  << "  eval_filter = " << eval_filter << endl
 				  << "  mirror_move = "  << mirror_move << endl;
 
         {
@@ -3690,7 +3698,7 @@ namespace Learner {
             sr.filenames.push_back(input_file_name);
             sr.no_shuffle = true;
 
-            MultiThinkFilterSfen multi_think(sr, sw, smart_sfen_skipping, qsearch_sfen_skipping, depth6_filter, mirror_move);
+            MultiThinkFilterSfen multi_think(sr, sw, smart_sfen_skipping, qsearch_sfen_skipping, depth6_filter, eval_filter, mirror_move);
             multi_think.start_file_read_worker();
             multi_think.start_file_write_worker();
             multi_think.go_think();

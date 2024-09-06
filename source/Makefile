@@ -13,6 +13,7 @@
 # YANEURAOU_ENGINE_NNUE_HALFKPE9 : NNUE型評価関数(halfKPE9)
 # YANEURAOU_ENGINE_NNUE_HALFKP_512X2_16_32 : NNUE型評価関数(halfkp_512x2-16-32)
 # YANEURAOU_ENGINE_NNUE_HALFKP_1024X2_8_32 : NNUE型評価関数(halfkp_1024x2-8-32)
+# YANEURAOU_ENGINE_NNUE_HALFKP_1024X2_8_64 : NNUE型評価関数(halfkp_1024x2-8-64)
 # YANEURAOU_ENGINE_NNUE_HALFKP_VM_256X2_32_32 : NNUE型評価関数(halfkp_vm_256x2-32-32)
 # YANEURAOU_ENGINE_KPPT          : KPPT型評価関数
 # YANEURAOU_ENGINE_KPP_KKPT      : KPP_KKPT型評価関数
@@ -30,6 +31,7 @@ YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE
 #YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE_HALFKPE9
 #YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE_HALFKP_512X2_16_32
 #YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE_HALFKP_1024X2_8_32
+#YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE_HALFKP_1024X2_8_64
 #YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE_HALFKP_VM_256X2_32_32
 #YANEURAOU_EDITION = YANEURAOU_ENGINE_NNUE_HALFKA_512X2_8X2_32
 #YANEURAOU_EDITION = YANEURAOU_ENGINE_KPPT
@@ -58,6 +60,9 @@ YO_CLUSTER = OFF
 # AVX-512対応(サーバー向けSkylake以降)ならAVX512を指定する。
 # AVX-512対応でさらにVNNI命令対応(Cascade Lake以降)なら、AVX512VNNIを指定する。
 
+# macOSの場合、
+# 1. IntelMacでSSE4.2までしか対応していないなら、APPLESSE42 を指定。AVX2に対応しているなら APPLEAVX2を指定する。
+# 2. M1以降のCPUであれば、APPLEM1を指定する。(M2でもM3でもAPPLEM1を指定する。)
 
 # --- Intel/AMD系 (x86/x64 Platform)
 #TARGET_CPU = AVX512VNNI
@@ -76,6 +81,11 @@ TARGET_CPU = AVX2
 #TARGET_CPU = OTHER
 #TARGET_CPU = GRAVITON2
 #TARGET_CPU = WASM
+# -- macOS for Intel
+#TARGET_CPU = APPLEAVX2
+#TARGET_CPU = APPLESSE42
+# -- macOS for M1/M2/M3
+#TARGET_CPU = APPLEM1
 
 
 # デバッガーを使用するか (debugger)
@@ -102,15 +112,19 @@ COMPILER = clang++
 
 
 # 標準的なコンパイルオプション (standard compile options)
-CPPFLAGS   = -std=c++17 -fno-exceptions -fno-rtti -Wextra -MMD -MP -fpermissive
+CPPFLAGS      = -std=c++17 -fno-exceptions -fno-rtti -Wextra -MMD -MP -fpermissive
 NVCC_CPPFLAGS = -std=c++17 -x cu -maxrregcount=0 --machine 64 --compile -cudart static -DNDEBUG -Xcompiler "-Ofast"
-WCPPFLAGS  =
-LDFLAGS  = $(EXTRA_LDFLAGS)
-LIBS     =
-INCLUDE  = # -I../include
+WCPPFLAGS     =
+LDFLAGS       = 
+LIBS          =
+INCLUDE       = # -I../include
 
-# makeするときにCPPFLAGSを追加で指定したいときはこれを用いる。
+# makeするときにCPPFLAGS,LDFLAGSを追加で指定したいときはこれを用いる。
 EXTRA_CPPFLAGS =
+EXTRA_LDFLAGS  =
+
+CPPFLAGS += $(EXTRA_CPPFLAGS)
+LDFLAGS  += $(EXTRA_LDFLAGS)
 
 # YANEURAOU_EDITION = YANEURAOU_ENGINE_MATERIALのときに指定できる、評価関数の通し番号
 #  1 : 普通の駒得のみの評価関数
@@ -300,7 +314,14 @@ ifeq ($(YANEURAOU_EDITION),YANEURAOU_ENGINE_NNUE_HALFKA_1024_8_32)
 	BLAS_CPPFLAGS=
 	BLAS_LDFLAGS=
 endif
-
+ifeq ($(YANEURAOU_EDITION),YANEURAOU_ENGINE_NNUE_HALFKA_1280_8_32)
+	BLAS_CPPFLAGS=
+	BLAS_LDFLAGS=
+endif
+ifeq ($(YANEURAOU_EDITION),YANEURAOU_ENGINE_NNUE_HALFKA_1280_8_64)
+	BLAS_CPPFLAGS=
+	BLAS_LDFLAGS=
+endif
 
 CPPFLAGS += -DNO_EXCEPTIONS
 LDFLAGS += -lpthread
@@ -359,8 +380,6 @@ ifeq (,)
 	SOURCES  +=                                                                \
 		book/makebook.cpp                                                      \
 		book/makebook2015.cpp                                                  \
-		book/makebook2019.cpp                                                  \
-		book/makebook2021.cpp                                                  \
 		book/makebook2023.cpp                                                  \
 		learn/learner.cpp                                                      \
 		learn/learning_tools.cpp                                               \
@@ -441,6 +460,7 @@ ifneq (,$(findstring YANEURAOU_ENGINE_DEEP,$(YANEURAOU_EDITION)))
 		engine/dlshogi-engine/PrintInfo.cpp                             \
 		engine/dlshogi-engine/UctSearch.cpp                             \
 		engine/dlshogi-engine/Node.cpp                                  \
+		engine/dlshogi-engine/PvMateSearch.cpp                          \
 		engine/dlshogi-engine/YaneuraOu_dlshogi_bridge.cpp
 endif
 
@@ -465,11 +485,9 @@ ifneq (,$(findstring YANEURAOU_ENGINE_NNUE,$(YANEURAOU_EDITION)))
 
 		else ifeq ($(YANEURAOU_EDITION),YANEURAOU_ENGINE_NNUE_HALFKP_VM_256X2_32_32)
 			CPPFLAGS += -DEVAL_NNUE_HALFKP_VM_256X2_32_32
-		
 		else ifeq ($(YANEURAOU_EDITION),YANEURAOU_ENGINE_NNUE_HALFKA_512X2_8X2_32)
 			CPPFLAGS += -DEVAL_NNUE_HALFKA_512X2_8X2_32
 			CPPFLAGS += -DUSE_STOCKFISH_NNUE
-		
 		else ifeq ($(YANEURAOU_EDITION),YANEURAOU_ENGINE_NNUE_HALFKA_1024_8_32)
 			CPPFLAGS += -DEVAL_NNUE_HALFKA_1024_8_32
 			CPPFLAGS += -DUSE_STOCKFISH_NNUE
@@ -479,7 +497,14 @@ ifneq (,$(findstring YANEURAOU_ENGINE_NNUE,$(YANEURAOU_EDITION)))
 			CPPFLAGS += -DUSE_STOCKFISH_NNUE
 			CPPFLAGS += -DUSE_ELEMENT_WISE_MULTIPLY
 			CPPFLAGS += -DUSE_DUAL_NET
-
+		else ifeq ($(YANEURAOU_EDITION),YANEURAOU_ENGINE_NNUE_HALFKA_1280_8_32)
+			CPPFLAGS += -DEVAL_NNUE_HALFKA_1280_8_32
+			CPPFLAGS += -DUSE_STOCKFISH_NNUE
+			CPPFLAGS += -DUSE_ELEMENT_WISE_MULTIPLY
+		else ifeq ($(YANEURAOU_EDITION),YANEURAOU_ENGINE_NNUE_HALFKA_1280_8_64)
+			CPPFLAGS += -DEVAL_NNUE_HALFKA_1280_8_64
+			CPPFLAGS += -DUSE_STOCKFISH_NNUE
+			CPPFLAGS += -DUSE_ELEMENT_WISE_MULTIPLY
 		endif
 	endif
 
@@ -636,7 +661,7 @@ else ifeq ($(TARGET_CPU),OTHER)
 endif
 
 # YANEURAOU_EDITION , CPUターゲット名 などのシンボルをコンパイル時に定義してやる。
-CPPFLAGS += -D$(YANEURAOU_EDITION) -DTARGET_CPU=\"$(TARGET_CPU)\" $(EXTRA_CPPFLAGS)
+CPPFLAGS += -D$(YANEURAOU_EDITION) -DTARGET_CPU=\"$(TARGET_CPU)\"
 NVCC_CPPFLAGS += -D$(YANEURAOU_EDITION) -DTARGET_CPU=\"$(TARGET_CPU)\"
 
 OBJECTS  = $(addprefix $(OBJDIR)/, $(SOURCES:.cpp=.o))
