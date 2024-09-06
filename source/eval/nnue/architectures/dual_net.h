@@ -26,13 +26,13 @@ enum NetSize {
 };
 
 // Number of input feature dimensions after conversion
-constexpr Stockfish::Eval::NNUE::IndexType TransformedFeatureDimensionsBig = 1024;
+constexpr Stockfish::Eval::NNUE::IndexType TransformedFeatureDimensionsBig = 1280;
 constexpr int       L2Big                           = 8;
-constexpr int       L3Big                           = 32;
+constexpr int       L3Big                           = 64;
 
 constexpr Stockfish::Eval::NNUE::IndexType TransformedFeatureDimensionsSmall = 128;
 constexpr int       L2Small                           = 8;
-constexpr int       L3Small                           = 32;
+constexpr int       L3Small                           = 64;
 
 template<Stockfish::Eval::NNUE::IndexType L1, int L2, int L3>
 struct Network
