@@ -137,8 +137,8 @@ namespace Eval {
             std::string architecture;
 			Tools::Result result = ReadHeader(stream, &hash_value, &architecture);
             if (result.is_not_ok()) return result;
-            if (hash_value != kHashValue) return Tools::ResultCode::FileMismatch;
 #if defined(USE_DUAL_NET)
+            if (hash_value != kHashValue[net_size]) return Tools::ResultCode::FileMismatch;
             if (net_size == NetSize::Big) {
               result = Detail::ReadParameters(stream, feature_transformer_big);
               if (result.is_not_ok()) return result;
@@ -152,6 +152,7 @@ namespace Eval {
               if (result.is_not_ok()) return result;
             }
 #else
+            if (hash_value != kHashValue) return Tools::ResultCode::FileMismatch;
             result = Detail::ReadParameters(stream, feature_transformer); if (result.is_not_ok()) return result;
 			result = Detail::ReadParameters(stream, network);             if (result.is_not_ok()) return result;
 #endif
@@ -358,9 +359,8 @@ namespace Eval {
                     const std::string file_path_big = Path::Combine(dir_name, NNUE::kFileNameBig);
                     std::ifstream stream_big(file_path_big, std::ios::binary);
                     sync_cout << "info string loading eval file : " << file_path_big << sync_endl;
-                    if (!NNUE::ReadParameters(stream_big, NNUE::NetSize::Big)) {
-                        return false;
-                    }
+                    Tools::Result result = NNUE::ReadParameters(stream_big, NNUE::NetSize::Big);
+                    if (result.is_not_ok()) return result;
                     const std::string file_path_small = Path::Combine(dir_name, NNUE::kFileNameSmall);
                     std::ifstream stream_small(file_path_small, std::ios::binary);
                     sync_cout << "info string loading eval file : " << file_path_small << sync_endl;
@@ -393,7 +393,7 @@ namespace Eval {
 
                     return NNUE::ReadParameters(stream);
 #else
-                    return false;
+                    return Tools::Result(Tools::ResultCode::NotImplementedError);
 #endif
                 }
             }();
